@@ -3,8 +3,13 @@ export type GameEvent =
   | { type: 'shot'; shooterId: number; weaponId: string }
   | { type: 'hit'; victimId: number; part: string; damage: number }
   | { type: 'targetKilled'; victimId: number; weaponId: string }
+  | { type: 'playerKilled'; victimId: number; attackerId: number; weaponId: string }
   | { type: 'reloadStarted'; weaponId: string }
   | { type: 'reloadFinished'; weaponId: string }
+  | { type: 'roundEnd'; winner: 'T' | 'CT'; reason: string }
+  | { type: 'bombPlanted'; site: 'A' | 'B' }
+  | { type: 'bombDefused' }
+  | { type: 'bombExploded' }
 
 export class EventBus {
   private handlers: Record<string, Array<(e: GameEvent) => void>> = {}

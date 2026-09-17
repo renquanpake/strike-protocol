@@ -4,7 +4,7 @@ import { emptyInput } from '../src/engine/input'
 import { EventBus } from '../src/engine/eventbus'
 import { CONFIG } from '../src/game/config'
 import { createGameState } from '../src/game/state'
-import { prepareLevel } from '../src/game/physics/collision'
+import { prepareLevel, type PreppedLevel } from '../src/game/physics/collision'
 import type { LevelDef } from '../src/game/map/layout'
 import { WEAPONS, newWeaponInstance } from '../src/game/weapons'
 import {
@@ -16,7 +16,8 @@ import {
 
 const openLevel: LevelDef = {
   name: 'open',
-  spawn: { x: 0, y: 0, z: 0 },
+  spawns: { T: [{ x: 0, y: 0, z: 0 }], CT: [] },
+  sites: [],
   brushes: [
     {
       min: { x: -512, y: -32, z: -512 },
@@ -25,52 +26,53 @@ const openLevel: LevelDef = {
     },
   ],
 }
-const prepped = prepareLevel(openLevel)
+const prepped: PreppedLevel = prepareLevel(openLevel)
 
-function makeState(): ReturnType<typeof createGameState> {
-  const s = createGameState(v3(0, 0, 0), CONFIG.healthMax, 0x1234)
-  s.player.onGround = true
-  return s
+function makeState() {
+  const state = createGameState(openLevel.spawns.T, [], CONFIG.healthMax, 800, 0x1234)
+  const p = state.players[0]
+  p.position = v3(0, 0, 0)
+  p.onGround = true
+  return { state, p }
 }
 
 describe('weapon system', () => {
   it('半自动手枪边沿触发且受冷却限制', () => {
-    const s = makeState()
+    const { state, p } = makeState()
     const events = new EventBus()
-    const glock = s.player.weapons.secondary!
+    const glock = p.weapons.secondary!
     expect(glock.defId).toBe('glock')
 
-    s.input = { ...emptyInput(), fireQueued: true }
-    s.tick = 0
-    fireWeapon(s, prepped, events)
+    p.input = { ...emptyInput(), fireQueued: true }
+    state.tick = 0
+    fireWeapon(state, p, prepped, events)
     expect(glock.ammoMag).toBe(WEAPONS.glock.magazine - 1)
 
-    s.tick = 1
-    s.input = { ...emptyInput(), fireQueued: true }
-    fireWeapon(s, prepped, events)
+    state.tick = 1
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
     // 冷却未到（150ms ≈ 10 tick），不发射
     expect(glock.ammoMag).toBe(WEAPONS.glock.magazine - 1)
 
-    s.tick = 10
-    s.input = { ...emptyInput(), fireQueued: true }
-    fireWeapon(s, prepped, events)
+    state.tick = 10
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
     expect(glock.ammoMag).toBe(WEAPONS.glock.magazine - 2)
   })
 
   it('全自动步枪按住连发，射速间隔正确', () => {
-    const s = makeState()
+    const { state, p } = makeState()
     const events = new EventBus()
-    s.player.weapons.primary = newWeaponInstance('m4')
-    s.player.activeSlot = 0
-    const m4 = s.player.weapons.primary!
+    p.weapons.primary = newWeaponInstance('m4')
+    p.activeSlot = 0
+    const m4 = p.weapons.primary!
     const interval = Math.round((WEAPONS.m4.fireRateMs / 1000) * CONFIG.tickRate)
 
-    s.input = { ...emptyInput(), fireHeld: true }
     let shots = 0
     for (let tick = 0; tick < interval * 12; tick++) {
-      s.tick = tick
-      s.input = { ...emptyInput(), fireHeld: true }
-      fireWeapon(s, prepped, events)
+      state.tick = tick
+      p.input = { ...emptyInput(), fireHeld: true }
+      fireWeapon(state, p, prepped, events)
       shots += tick % interval === 0 ? 1 : 0
     }
     // 每 interval 一发：0,6,12... 共 12 发
@@ -79,47 +81,47 @@ describe('weapon system', () => {
   })
 
   it('换弹完成后弹药回填，换弹期间无法开火', () => {
-    const s = makeState()
+    const { state, p } = makeState()
     const events = new EventBus()
-    s.player.weapons.primary = newWeaponInstance('awp')
-    s.player.activeSlot = 0
-    const awp = s.player.weapons.primary!
+    p.weapons.primary = newWeaponInstance('awp')
+    p.activeSlot = 0
+    const awp = p.weapons.primary!
     awp.ammoMag = 0
 
-    s.tick = 0
-    s.input = { ...emptyInput(), reloadQueued: true }
-    updateWeaponSystem(s, events)
+    state.tick = 0
+    p.input = { ...emptyInput(), reloadQueued: true }
+    updateWeaponSystem(state, p, events)
     expect(awp.reloadUntilTick).toBeGreaterThan(0)
     const reloadTicks = awp.reloadUntilTick
 
-    s.input = { ...emptyInput(), fireHeld: true }
-    fireWeapon(s, prepped, events)
+    p.input = { ...emptyInput(), fireHeld: true }
+    fireWeapon(state, p, prepped, events)
     expect(awp.ammoMag).toBe(0) // 换弹中无法开火
 
-    s.tick = reloadTicks
-    s.input = { ...emptyInput(), fireHeld: true }
-    updateWeaponSystem(s, events)
+    state.tick = reloadTicks
+    p.input = { ...emptyInput(), fireHeld: true }
+    updateWeaponSystem(state, p, events)
     expect(awp.ammoMag).toBe(WEAPONS.awp.magazine)
     expect(awp.ammoReserve).toBe(WEAPONS.awp.reserve - WEAPONS.awp.magazine)
     expect(awp.reloadUntilTick).toBe(0)
   })
 
   it('切槽 1/2/3 切换激活武器并带切枪硬直', () => {
-    const s = makeState()
+    const { state, p } = makeState()
     const events = new EventBus()
-    s.player.weapons.primary = newWeaponInstance('m4')
-    expect(activeWeapon(s)?.defId).toBe('glock')
+    p.weapons.primary = newWeaponInstance('m4')
+    expect(activeWeapon(p)?.defId).toBe('glock')
 
-    s.tick = 100
-    s.input = { ...emptyInput(), switchSlot: 0 }
-    updateWeaponSystem(s, events)
-    expect(s.player.activeSlot).toBe(0)
-    expect(activeWeapon(s)?.defId).toBe('m4')
+    state.tick = 100
+    p.input = { ...emptyInput(), switchSlot: 0 }
+    updateWeaponSystem(state, p, events)
+    expect(p.activeSlot).toBe(0)
+    expect(activeWeapon(p)?.defId).toBe('m4')
 
-    s.input = { ...emptyInput(), switchSlot: 2 }
-    updateWeaponSystem(s, events)
-    expect(s.player.activeSlot).toBe(2)
-    expect(activeWeapon(s)?.defId).toBe('knife')
+    p.input = { ...emptyInput(), switchSlot: 2 }
+    updateWeaponSystem(state, p, events)
+    expect(p.activeSlot).toBe(2)
+    expect(activeWeapon(p)?.defId).toBe('knife')
   })
 })
 

@@ -1,6 +1,5 @@
 import type { Vec3 } from '../../engine/math'
-import { v3 } from '../../engine/math'
-import type { Brush, LevelDef } from '../map/layout'
+import type { Brush, LevelDef, SiteDef } from '../map/layout'
 
 const EPS = 1e-3
 /** 单 tick 最大穿透容差（maxFallSpeed*dt ≈ 10.9u） */
@@ -12,7 +11,8 @@ const LADDER_TOLERANCE = 6
 export interface PreppedLevel {
   solids: Brush[]
   ladders: Brush[]
-  spawn: Vec3
+  spawns: { T: Vec3[]; CT: Vec3[] }
+  sites: SiteDef[]
 }
 
 export function prepareLevel(level: LevelDef): PreppedLevel {
@@ -23,7 +23,12 @@ export function prepareLevel(level: LevelDef): PreppedLevel {
     if (b.ladder) ladders.push(b)
     else solids.push(b)
   }
-  return { solids, ladders, spawn: v3(level.spawn.x, level.spawn.y, level.spawn.z) }
+  return {
+    solids,
+    ladders,
+    spawns: level.spawns,
+    sites: level.sites ?? [],
+  }
 }
 
 function overlapXZ(px: number, pz: number, r: number, b: Brush): boolean {

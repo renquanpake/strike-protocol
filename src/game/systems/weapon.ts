@@ -1,23 +1,24 @@
 import { CONFIG } from '../config'
 import { WEAPONS, type WeaponDef, type WeaponInstance } from '../weapons'
-import type { GameState } from '../state'
+import type { GameState, PlayerEntity } from '../state'
 import type { EventBus } from '../../engine/eventbus'
 import { v3, type Vec3 } from '../../engine/math'
 import { targetAABBs } from '../entities/target'
+import { humanAABBs } from '../entities/bot'
 import { raycastBoxes } from '../physics/raycast'
 import type { PreppedLevel } from '../physics/collision'
 import type { HitboxPart } from '../types'
+import { grantKillReward } from '../economy'
 
 /** 当前激活武器 */
-export function activeWeapon(state: GameState): WeaponInstance | null {
-  const s = state.player
-  switch (s.activeSlot) {
+export function activeWeapon(p: PlayerEntity): WeaponInstance | null {
+  switch (p.activeSlot) {
     case 0:
-      return s.weapons.primary
+      return p.weapons.primary
     case 1:
-      return s.weapons.secondary
+      return p.weapons.secondary
     default:
-      return s.weapons.knife
+      return p.weapons.knife
   }
 }
 
@@ -39,10 +40,9 @@ export function shotDamage(def: WeaponDef, part: HitboxPart, dist: number, armor
   return d
 }
 
-/** 换弹 / 切槽（每 tick） */
-export function updateWeaponSystem(state: GameState, events: EventBus): void {
-  const p = state.player
-  const inp = state.input
+/** 换弹 / 切槽（每 tick，单玩家） */
+export function updateWeaponSystem(state: GameState, p: PlayerEntity, events: EventBus): void {
+  const inp = p.input
 
   for (const inst of [p.weapons.primary, p.weapons.secondary, p.weapons.knife]) {
     if (!inst) continue
@@ -57,7 +57,7 @@ export function updateWeaponSystem(state: GameState, events: EventBus): void {
   }
 
   if (inp.reloadQueued) {
-    const w = activeWeapon(state)
+    const w = activeWeapon(p)
     if (w) {
       const def = WEAPONS[w.defId]
       if (def.magazine > 0 && w.reloadUntilTick === 0 && w.ammoMag < def.magazine && w.ammoReserve > 0) {
@@ -78,16 +78,21 @@ export function updateWeaponSystem(state: GameState, events: EventBus): void {
     }
   }
 
-  // 松手重置连射计数
-  const w = activeWeapon(state)
+  const w = activeWeapon(p)
   if (w && !inp.fireHeld) w.burstCount = 0
 }
 
 /** 开火（hitscan，每 tick 至多一发） */
-export function fireWeapon(state: GameState, level: PreppedLevel, events: EventBus): void {
-  const p = state.player
-  const inp = state.input
-  const w = activeWeapon(state)
+export function fireWeapon(
+  state: GameState,
+  shooter: PlayerEntity,
+  level: PreppedLevel,
+  events: EventBus,
+): void {
+  if (!shooter.alive) return
+  const p = shooter
+  const inp = p.input
+  const w = activeWeapon(p)
   if (!w) return
   const def = WEAPONS[w.defId]
 
@@ -105,13 +110,13 @@ export function fireWeapon(state: GameState, level: PreppedLevel, events: EventB
 
   // 近战
   if (def.category === 'knife') {
-    meleeStrike(state, def, eye, events)
+    meleeStrike(state, p, def, eye, events)
     w.nextFireTick = state.tick + msToTicks(def.fireRateMs)
-    events.emit({ type: 'shot', shooterId: 0, weaponId: def.id })
+    events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id })
     return
   }
 
-  if (w.ammoMag <= 0) return // 空仓（M7 播 click 音效）
+  if (w.ammoMag <= 0) return
   w.ammoMag -= 1
   w.burstCount += 1
   w.nextFireTick = state.tick + msToTicks(def.fireRateMs)
@@ -126,10 +131,9 @@ export function fireWeapon(state: GameState, level: PreppedLevel, events: EventB
 
   // 弹道
   const forward = viewForward(p.yaw, p.pitch)
-  const coneDeg = spreadDegrees(state, def) + def.spreadDeg.burstGrow * Math.min(w.burstCount, 10)
+  const coneDeg = spreadDegrees(p, def) + def.spreadDeg.burstGrow * Math.min(w.burstCount, 10)
   const coneRad = (coneDeg * Math.PI) / 180
   let right = viewRight(p.yaw, p.pitch)
-  // 正交化：去除了 forward 分量后归一
   const fr = forward.x * right.x + forward.y * right.y + forward.z * right.z
   right = normalize(v3(right.x - forward.x * fr, right.y - forward.y * fr, right.z - forward.z * fr))
   const up: Vec3 = v3(
@@ -138,7 +142,7 @@ export function fireWeapon(state: GameState, level: PreppedLevel, events: EventB
     forward.x * right.y - forward.y * right.x,
   )
 
-  const boxes = targetBoxes(state, level)
+  const boxes = hitBoxes(state, level, p.id)
   for (let i = 0; i < def.pellets; i++) {
     const [ox, oy, oz] = state.rng.coneDirection(coneRad)
     const dir: Vec3 = normalize(
@@ -150,6 +154,7 @@ export function fireWeapon(state: GameState, level: PreppedLevel, events: EventB
     )
     const hit = raycastBoxes(eye, dir, boxes)
     if (!hit) continue
+
     if (hit.target.startsWith('target:')) {
       const tid = Number(hit.target.split(':')[1])
       const t = state.targets.find((x) => x.id === tid)
@@ -164,12 +169,44 @@ export function fireWeapon(state: GameState, level: PreppedLevel, events: EventB
         t.respawnAtTick = state.tick + msToTicks(2000)
         events.emit({ type: 'targetKilled', victimId: tid, weaponId: def.id })
       }
+    } else if (hit.target.startsWith('player:')) {
+      const vid = Number(hit.target.split(':')[1])
+      const victim = state.players.find((x) => x.id === vid)
+      if (!victim || !victim.alive || !hit.part) continue
+      const part = hit.part as HitboxPart
+      const dmg = shotDamage(def, part, hit.t, victim.armor)
+      applyPlayerHit(state, p, victim, dmg, def, events)
     }
   }
-  events.emit({ type: 'shot', shooterId: 0, weaponId: def.id })
+  events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id })
 }
 
-function targetBoxes(state: GameState, level: PreppedLevel) {
+function applyPlayerHit(
+  state: GameState,
+  shooter: PlayerEntity,
+  victim: PlayerEntity,
+  dmg: number,
+  def: WeaponDef,
+  events: EventBus,
+): void {
+  victim.health -= dmg
+  events.emit({ type: 'hit', victimId: victim.id, part: 'body', damage: dmg })
+  if (victim.health <= 0) {
+    victim.alive = false
+    victim.deaths += 1
+    shooter.kills += 1
+    grantKillReward(shooter, def.killReward)
+    // C4 持有者死亡 → 掉落
+    if (state.round.c4.state === 'carried' && state.round.c4.carrierId === victim.id) {
+      state.round.c4.state = 'dropped'
+      state.round.c4.carrierId = null
+      state.round.c4.position = v3(victim.position.x, victim.position.y, victim.position.z)
+    }
+    events.emit({ type: 'playerKilled', victimId: victim.id, attackerId: shooter.id, weaponId: def.id })
+  }
+}
+
+function hitBoxes(state: GameState, level: PreppedLevel, shooterId: number) {
   const boxes: { id: string; part?: string; min: Vec3; max: Vec3 }[] = []
   level.solids.forEach((b, i) => boxes.push({ id: `brush:${i}`, min: b.min, max: b.max }))
   for (const t of state.targets) {
@@ -178,11 +215,16 @@ function targetBoxes(state: GameState, level: PreppedLevel) {
       boxes.push({ id: `target:${t.id}`, part: box.part, min: box.min, max: box.max })
     }
   }
+  for (const pl of state.players) {
+    if (pl.id === shooterId || !pl.alive) continue
+    for (const box of humanAABBs(pl)) {
+      boxes.push({ id: `player:${pl.id}`, part: box.part, min: box.min, max: box.max })
+    }
+  }
   return boxes
 }
 
-function meleeStrike(state: GameState, def: WeaponDef, eye: Vec3, events: EventBus): void {
-  const p = state.player
+function meleeStrike(state: GameState, p: PlayerEntity, def: WeaponDef, eye: Vec3, events: EventBus): void {
   const forward = viewForward(p.yaw, p.pitch)
   const boxes: { id: string; part?: string; min: Vec3; max: Vec3 }[] = []
   for (const t of state.targets) {
@@ -191,26 +233,38 @@ function meleeStrike(state: GameState, def: WeaponDef, eye: Vec3, events: EventB
       boxes.push({ id: `target:${t.id}`, part: box.part, min: box.min, max: box.max })
     }
   }
+  for (const pl of state.players) {
+    if (pl.id === p.id || !pl.alive) continue
+    for (const box of humanAABBs(pl)) {
+      boxes.push({ id: `player:${pl.id}`, part: box.part, min: box.min, max: box.max })
+    }
+  }
   const hit = raycastBoxes(eye, forward, boxes)
+  if (!hit) return
   const meleeRange = def.meleeRange ?? 0
-  if (hit && hit.target.startsWith('target:') && hit.t <= meleeRange) {
+  const meleeDmg = def.meleeDamage ?? def.damage
+  if (hit.target.startsWith('target:') && hit.t <= meleeRange) {
     const tid = Number(hit.target.split(':')[1])
     const t = state.targets.find((x) => x.id === tid)
     if (!t) return
-    t.health -= def.meleeDamage ?? def.damage
+    t.health -= meleeDmg
     t.hitFlashTick = state.tick
-    events.emit({ type: 'hit', victimId: tid, part: hit.part ?? 'chest', damage: def.meleeDamage ?? def.damage })
+    events.emit({ type: 'hit', victimId: tid, part: hit.part ?? 'chest', damage: meleeDmg })
     if (t.health <= 0) {
       t.alive = false
       t.respawnAtTick = state.tick + msToTicks(2000)
       events.emit({ type: 'targetKilled', victimId: tid, weaponId: def.id })
     }
+  } else if (hit.target.startsWith('player:') && hit.t <= meleeRange) {
+    const vid = Number(hit.target.split(':')[1])
+    const victim = state.players.find((x) => x.id === vid)
+    if (!victim || !victim.alive) return
+    applyPlayerHit(state, p, victim, meleeDmg, def, events)
   }
 }
 
 /** 散布状态锥角（度）：站定 / 移动 / 空中 */
-export function spreadDegrees(state: GameState, def: WeaponDef): number {
-  const p = state.player
+export function spreadDegrees(p: PlayerEntity, def: WeaponDef): number {
   const hspeed = Math.hypot(p.velocity.x, p.velocity.z)
   if (!p.onGround) return def.spreadDeg.air
   if (hspeed > CONFIG.movingSpeedThreshold) return def.spreadDeg.move

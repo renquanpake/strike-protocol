@@ -88,6 +88,84 @@
         padding: 7px 12px;
         border-radius: 3px;
       }
+      #round {
+        position: absolute;
+        left: 50%;
+        top: 10px;
+        transform: translateX(-50%);
+        font-size: 13px;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 6px 14px;
+        border-radius: 3px;
+        letter-spacing: 0.04em;
+      }
+      #roundmsg {
+        position: absolute;
+        left: 50%;
+        top: 40%;
+        transform: translateX(-50%);
+        font-size: 22px;
+        color: #ffd257;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 14px 26px;
+        border-radius: 4px;
+        display: none;
+        white-space: nowrap;
+      }
+      #buymenu {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 320px;
+        background: rgba(10, 14, 18, 0.92);
+        border: 1px solid rgba(140, 200, 255, 0.4);
+        border-radius: 4px;
+        padding: 14px;
+        pointer-events: auto;
+      }
+      #buymenu .money {
+        color: #ffd257;
+        font-size: 16px;
+        margin-bottom: 8px;
+      }
+      .buy-row {
+        padding: 6px 8px;
+        cursor: pointer;
+        border-radius: 3px;
+        font-size: 13px;
+      }
+      .buy-row:hover {
+        background: rgba(140, 200, 255, 0.18);
+      }
+      #scoreboard {
+        position: absolute;
+        left: 50%;
+        top: 8%;
+        transform: translateX(-50%);
+        background: rgba(10, 14, 18, 0.9);
+        border: 1px solid rgba(140, 200, 255, 0.35);
+        border-radius: 4px;
+        padding: 10px 14px;
+        min-width: 340px;
+      }
+      #scoreboard .sb-head {
+        color: #ffd257;
+        font-size: 14px;
+        margin-bottom: 8px;
+        letter-spacing: 0.05em;
+      }
+      #scoreboard table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      #scoreboard td {
+        padding: 3px 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      #scoreboard tr.T td:first-child { color: #6fe07f; }
+      #scoreboard tr.CT td:first-child { color: #7fb0ff; }
     </style>
   </head>
   <body>
@@ -95,11 +173,14 @@
     <div id="hud">
       <div id="crosshair"></div>
       <div id="lock-hint">
-        <div class="title">STRIKE PROTOCOL — M2</div>
+        <div class="title">STRIKE PROTOCOL — M3</div>
         点击画面锁定鼠标开始<br />
         WASD 移动 / 空格 跳跃(按住连跳) / Shift 静走 / Ctrl 蹲<br />
-        鼠标左键 开火 / R 换弹 / 1 主 · 2 副 · 3 刀
+        鼠标左键 开火 / R 换弹 / 1 主 · 2 副 · 3 刀<br />
+        B 买枪 / Tab 计分板 / E 安放·拆除 C4
       </div>
+      <div id="round"></div>
+      <div id="roundmsg"></div>
       <div id="status"></div>
       <div id="keys">FPS <span id="fps">--</span> · TICK <span id="tick">0</span></div>
       <div id="weapon"></div>

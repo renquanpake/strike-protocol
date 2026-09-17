@@ -1,5 +1,5 @@
 import { CONFIG } from '../config'
-import type { GameState } from '../state'
+import type { GameState, PlayerEntity } from '../state'
 import { collideBrushes, overlapLadder, type PreppedLevel } from '../physics/collision'
 
 /** bhop 自动起跳窗口（tick）：落地后 N tick 内仍按住跳跃键则再起跳 */
@@ -8,13 +8,16 @@ function bhopWindowTicks(): number {
 }
 
 /**
- * 每逻辑 tick 执行一次的角色运动积分。
+ * 单个实体的每 tick 运动积分（人类与 Bot 共用，Bot 为合成输入）。
  * 顺序：视角 → 蹲/期望速 → 期望方向 → 摩擦 → 水平加速 → 梯子/跳跃/重力 → 碰撞(着地+吸收) → 坠落伤害 → 坠出地图。
- * 实现 Source 风格：地面摩擦+加速 / 空中加速(bhop) / 跳跃冲量 / 重力 / 梯子。
  */
-export function updateMovement(state: GameState, level: PreppedLevel, dt: number): void {
-  const p = state.player
-  const inp = state.input
+export function updatePlayerMovement(
+  state: GameState,
+  p: PlayerEntity,
+  level: PreppedLevel,
+  dt: number,
+): void {
+  const inp = p.input
 
   // 视角
   p.yaw -= inp.mouseDX * CONFIG.mouseSens
@@ -60,14 +63,12 @@ export function updateMovement(state: GameState, level: PreppedLevel, dt: number
   if (!p.onLadder && (wx !== 0 || wz !== 0)) {
     const cur = p.velocity.x * wx + p.velocity.z * wz
     if (p.onGround) {
-      // 地面：向 wishSpeed 加速，摩擦负责收敛
       if (cur < wishSpeed) {
         const add = Math.min(CONFIG.groundAccel * dt * wishSpeed, wishSpeed - cur)
         p.velocity.x += wx * add
         p.velocity.z += wz * add
       }
     } else if (cur < CONFIG.airMaxSpeed) {
-      // 空中（bhop）：目标取 airMaxSpeed，每 tick 增量受 airSpeedCap 限制
       const add = Math.min(
         CONFIG.airAccel * dt * CONFIG.airMaxSpeed,
         CONFIG.airMaxSpeed - cur,
@@ -99,7 +100,6 @@ export function updateMovement(state: GameState, level: PreppedLevel, dt: number
       p.velocity.y = CONFIG.jumpImpulse + bonus
       p.onGround = false
     }
-    // 重力
     p.velocity.y -= CONFIG.gravity * dt
     if (p.velocity.y < -CONFIG.maxFallSpeed) p.velocity.y = -CONFIG.maxFallSpeed
   }
@@ -126,11 +126,13 @@ export function updateMovement(state: GameState, level: PreppedLevel, dt: number
     p.health = Math.max(0, p.health - dmg)
   }
 
-  // 坠出地图
+  // 坠出地图 → 回本队出生点
   if (p.position.y < CONFIG.killFallY) {
-    p.position.x = level.spawn.x
-    p.position.y = level.spawn.y
-    p.position.z = level.spawn.z
+    const idx = p.id % 5
+    const sp = level.spawns[p.team][idx] ?? level.spawns[p.team][0]
+    p.position.x = sp.x
+    p.position.y = sp.y
+    p.position.z = sp.z
     p.velocity.x = 0
     p.velocity.y = 0
     p.velocity.z = 0
@@ -139,7 +141,7 @@ export function updateMovement(state: GameState, level: PreppedLevel, dt: number
   }
 }
 
-function isOnLadder(p: GameState['player'], height: number, level: PreppedLevel): boolean {
+function isOnLadder(p: PlayerEntity, height: number, level: PreppedLevel): boolean {
   for (const l of level.ladders) {
     if (overlapLadder(p.position, height, CONFIG.playerRadius, l)) return true
   }

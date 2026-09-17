@@ -54,6 +54,23 @@ export const CONFIG = {
   // 地图
   killFallY: -1000,
 
+  // 回合与经济
+  warmupMs: 5000,
+  freezeMs: 5000,
+  buyTimeMs: 20000,
+  roundTimeMs: 115000,
+  c4TimerMs: 40000,
+  plantMs: 3200,
+  defuseMs: 10000,
+  defuseWithKitMs: 5000,
+  roundEndMs: 5000,
+  halftimeMs: 15000,
+  winRounds: 16,
+  startMoney: 800,
+  moneyCap: 16000,
+  roundWinBonus: 3000,
+  lossBonus: [1400, 1900, 2400, 2900, 3400], // 连败 2-6+ 档
+
   // 渲染
   skyColor: 0x8fb8d8,
   fogNear: 800,

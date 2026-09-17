@@ -17,6 +17,12 @@ export interface InputFrame {
   fireHeld: boolean
   /** 换弹按下当帧 */
   reloadQueued: boolean
+  /** 交互键（安放/拆除）按住 */
+  useHeld: boolean
+  /** 买枪菜单开关键（边沿） */
+  buyQueued: boolean
+  /** 计分板按住 */
+  scoreboardHeld: boolean
   /** 切槽按下当帧（0=primary 1=secondary 2=knife），无则为 null */
   switchSlot: number | null
   crouch: boolean
@@ -35,6 +41,9 @@ const EMPTY: InputFrame = {
   fireQueued: false,
   fireHeld: false,
   reloadQueued: false,
+  useHeld: false,
+  buyQueued: false,
+  scoreboardHeld: false,
   switchSlot: null,
   crouch: false,
   walk: false,
@@ -50,6 +59,7 @@ export class InputController {
   private fireQueued = false
   private fireHeldFlag = false
   private reloadQueued = false
+  private buyQueued = false
   private switchSlot: number | null = null
   private mouseDX = 0
   private mouseDY = 0
@@ -93,6 +103,8 @@ export class InputController {
       if (!this.keys.has('Space')) this.jumpQueued = true
     }
     if (e.code === 'KeyR' && !this.keys.has('KeyR')) this.reloadQueued = true
+    if (e.code === 'KeyB' && !this.keys.has('KeyB')) this.buyQueued = true
+    if (e.code === 'Tab') e.preventDefault()
     if (e.code === 'Digit1' && !this.keys.has('Digit1')) this.switchSlot = 0
     if (e.code === 'Digit2' && !this.keys.has('Digit2')) this.switchSlot = 1
     if (e.code === 'Digit3' && !this.keys.has('Digit3')) this.switchSlot = 2
@@ -134,6 +146,9 @@ export class InputController {
       fireQueued: this.fireQueued,
       fireHeld: this.fireHeldLocked(),
       reloadQueued: this.reloadQueued,
+      useHeld: k.has('KeyE'),
+      buyQueued: this.buyQueued,
+      scoreboardHeld: k.has('Tab'),
       switchSlot: this.switchSlot,
       crouch: k.has('ControlLeft') || k.has('ControlRight'),
       walk: k.has('ShiftLeft') || k.has('ShiftRight'),
@@ -143,6 +158,7 @@ export class InputController {
     this.jumpQueued = false
     this.fireQueued = false
     this.reloadQueued = false
+    this.buyQueued = false
     this.switchSlot = null
     this.mouseDX = 0
     this.mouseDY = 0

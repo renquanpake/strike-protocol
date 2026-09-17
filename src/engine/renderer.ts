@@ -65,6 +65,24 @@ export class GameRenderer {
   }
 
   private targetMeshes: { id: number; group: THREE.Group; parts: THREE.Mesh[]; base: number[] }[] = []
+  private dynBoxes: Map<string, { mesh: THREE.Mesh; w: number; h: number; d: number }> = new Map()
+
+  addDynamicBox(id: string, w: number, h: number, d: number, color: number): void {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshLambertMaterial({ color }),
+    )
+    this.scene.add(mesh)
+    this.dynBoxes.set(id, { mesh, w, h, d })
+  }
+
+  updateDynamicBox(id: string, x: number, y: number, z: number, visible: boolean): void {
+    const entry = this.dynBoxes.get(id)
+    if (!entry) return
+    entry.mesh.visible = visible
+    // y 为脚底
+    entry.mesh.position.set(x, y + entry.h / 2, z)
+  }
 
   addTargets(defs: TargetDef[]): void {
     for (const d of defs) {
