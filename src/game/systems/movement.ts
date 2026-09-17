@@ -1,14 +1,18 @@
 import { CONFIG } from '../config'
 import type { GameState } from '../state'
-import type { LevelDef } from '../map/layout'
-import { collideBrushes } from '../physics/collision'
+import { collideBrushes, overlapLadder, type PreppedLevel } from '../physics/collision'
+
+/** bhop 自动起跳窗口（tick）：落地后 N tick 内仍按住跳跃键则再起跳 */
+function bhopWindowTicks(): number {
+  return Math.max(1, Math.round((CONFIG.bhopWindowMs / 1000) * CONFIG.tickRate))
+}
 
 /**
  * 每逻辑 tick 执行一次的角色运动积分。
- * 实现 Source 风格：地面摩擦+加速 / 空中加速（bhop 来源）/ 跳跃冲量 / 重力。
- * M1 起将校准 air accelerate 窗口与落地自动起跳（bhopWindowMs）。
+ * 顺序：视角 → 蹲/期望速 → 期望方向 → 摩擦 → 水平加速 → 梯子/跳跃/重力 → 碰撞(着地+吸收) → 坠落伤害 → 坠出地图。
+ * 实现 Source 风格：地面摩擦+加速 / 空中加速(bhop) / 跳跃冲量 / 重力 / 梯子。
  */
-export function updateMovement(state: GameState, level: LevelDef, dt: number): void {
+export function updateMovement(state: GameState, level: PreppedLevel, dt: number): void {
   const p = state.player
   const inp = state.input
 
@@ -18,7 +22,7 @@ export function updateMovement(state: GameState, level: LevelDef, dt: number): v
   const pitchLimit = Math.PI / 2 - 0.01
   p.pitch = Math.min(pitchLimit, Math.max(-pitchLimit, p.pitch))
 
-  // 蹲（M0：不受阻挡限制）
+  // 蹲
   p.crouching = inp.crouch
   const height = p.crouching ? CONFIG.crouchHeight : CONFIG.playerHeight
   const wishSpeed = p.crouching
@@ -43,14 +47,17 @@ export function updateMovement(state: GameState, level: LevelDef, dt: number): v
     wz = 0
   }
 
+  // 梯子判定（决定本 tick 是否走攀爬逻辑）
+  p.onLadder = isOnLadder(p, height, level)
+
   // 摩擦
   const fric = p.onGround ? CONFIG.groundFriction : CONFIG.airFriction
   const decay = Math.max(0, 1 - fric * dt)
   p.velocity.x *= decay
   p.velocity.z *= decay
 
-  // 加速
-  if (wx !== 0 || wz !== 0) {
+  // 水平加速（梯子上不推进）
+  if (!p.onLadder && (wx !== 0 || wz !== 0)) {
     const cur = p.velocity.x * wx + p.velocity.z * wz
     if (p.onGround) {
       // 地面：向 wishSpeed 加速，摩擦负责收敛
@@ -71,27 +78,53 @@ export function updateMovement(state: GameState, level: LevelDef, dt: number): v
     }
   }
 
-  // 跳跃（M0：着地即跳；M1 加落地窗口自动 bhop）
-  if (inp.jumpQueued && p.onGround) {
-    p.velocity.y = CONFIG.jumpImpulse
+  // 坠落冲击采样（进入碰撞前的竖直速度）
+  const impactSpeed = p.velocity.y < 0 ? -p.velocity.y : 0
+
+  // 梯子 / 跳跃 / 重力
+  if (p.onLadder) {
+    p.velocity.y = inp.forward
+      ? CONFIG.ladderClimbSpeed
+      : inp.back
+        ? -CONFIG.ladderClimbSpeed
+        : 0
+    p.velocity.x *= 0.6
+    p.velocity.z *= 0.6
     p.onGround = false
-    p.lastGroundedTick = state.tick
+  } else {
+    // 跳跃：边沿触发，或落地窗口内按住跳跃键（自动 bhop）
+    const inWindow = state.tick - p.lastGroundedTick <= bhopWindowTicks()
+    if (p.onGround && (inp.jumpQueued || (inp.jumpHeld && inWindow))) {
+      const bonus = p.crouching ? CONFIG.crouchJumpBonus : 0
+      p.velocity.y = CONFIG.jumpImpulse + bonus
+      p.onGround = false
+    }
+    // 重力
+    p.velocity.y -= CONFIG.gravity * dt
+    if (p.velocity.y < -CONFIG.maxFallSpeed) p.velocity.y = -CONFIG.maxFallSpeed
   }
 
-  // 重力
-  p.velocity.y -= CONFIG.gravity * dt
-  if (p.velocity.y < -CONFIG.maxFallSpeed) p.velocity.y = -CONFIG.maxFallSpeed
-
-  // 碰撞
+  // 实心碰撞（着地 + 竖直吸收）
+  const wasGrounded = p.onGround
   p.onGround = collideBrushes(
     p.position,
     p.velocity,
     height,
     CONFIG.playerRadius,
-    level.brushes,
+    level.solids,
     dt,
   )
-  if (p.onGround) p.lastGroundedTick = state.tick
+  if (p.onGround) {
+    p.velocity.y = 0
+    p.lastGroundedTick = state.tick
+  }
+  const justLanded = p.onGround && !wasGrounded
+
+  // 坠落伤害
+  if (justLanded && impactSpeed >= CONFIG.fallDamageThreshold) {
+    const dmg = (impactSpeed - CONFIG.fallDamageThreshold) * CONFIG.fallDamageScale
+    p.health = Math.max(0, p.health - dmg)
+  }
 
   // 坠出地图
   if (p.position.y < CONFIG.killFallY) {
@@ -102,5 +135,13 @@ export function updateMovement(state: GameState, level: LevelDef, dt: number): v
     p.velocity.y = 0
     p.velocity.z = 0
     p.onGround = false
+    p.onLadder = false
   }
+}
+
+function isOnLadder(p: GameState['player'], height: number, level: PreppedLevel): boolean {
+  for (const l of level.ladders) {
+    if (overlapLadder(p.position, height, CONFIG.playerRadius, l)) return true
+  }
+  return false
 }

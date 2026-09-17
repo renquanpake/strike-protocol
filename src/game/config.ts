@@ -22,6 +22,14 @@ export const CONFIG = {
   maxFallSpeed: 700,
   gravity: 800, // u/s^2（jumpImpulse^2/2g ≈ 57u 跳跃高度，约 1.7m）
 
+  // 生命值 / 坠落
+  healthMax: 100,
+  fallDamageScale: 0.5, // 超出阈值后每 1u/s 计 0.5 伤害
+  crouchJumpBonus: 24, // 蹲跳额外垂直冲量
+
+  // 梯子
+  ladderClimbSpeed: 130, // u/s 上下攀爬速率
+
   // 角色几何（CS 比例）
   playerHeight: 72,
   crouchHeight: 48,
@@ -32,6 +40,16 @@ export const CONFIG = {
   // 视角
   mouseSens: 0.0021,
   fov: 75,
+
+  // 战斗
+  movingSpeedThreshold: 30, // u/s：超过即视为移动态散布
+  hitboxMultipliers: {
+    head: 4,
+    chest: 1,
+    stomach: 1,
+    arms: 0.7,
+    legs: 0.7,
+  } as Record<'head' | 'chest' | 'stomach' | 'arms' | 'legs', number>,
 
   // 地图
   killFallY: -1000,

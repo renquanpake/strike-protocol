@@ -1,4 +1,6 @@
 import type { GameState } from '../game/state'
+import { WEAPONS } from '../game/weapons'
+import { activeWeapon } from '../game/systems/weapon'
 
 export class HUD {
   private statusEl: HTMLElement
@@ -6,6 +8,7 @@ export class HUD {
   private hintEl: HTMLElement
   private fpsEl: HTMLElement
   private tickEl: HTMLElement
+  private weaponEl: HTMLElement | null = null
   private lastTextUpdate = 0
 
   constructor(root: HTMLElement) {
@@ -14,6 +17,7 @@ export class HUD {
     this.hintEl = root.querySelector('#lock-hint') as HTMLElement
     this.fpsEl = root.querySelector('#fps') as HTMLElement
     this.tickEl = root.querySelector('#tick') as HTMLElement
+    this.weaponEl = root.querySelector('#weapon')
   }
 
   update(state: GameState, fps: number, locked: boolean, nowMs: number): void {
@@ -27,8 +31,19 @@ export class HUD {
       `TICK ${state.tick}`,
       `POS ${p.position.x.toFixed(0)} / ${p.position.y.toFixed(0)} / ${p.position.z.toFixed(0)}`,
       `SPD ${speed.toFixed(1)} u/s${p.onGround ? '' : ' (AIR)'}`,
-      `GND ${p.onGround ? 'Y' : 'N'} · CRH ${p.crouching ? 'Y' : 'N'}`,
+      `HP ${p.health.toFixed(0)} · GND ${p.onGround ? 'Y' : 'N'} · LAD ${p.onLadder ? 'Y' : 'N'}`,
+      state.targets.map((t) => `T${t.id} ${t.alive ? t.health.toFixed(0) : '---'}`).join('  '),
     ].join('\n')
+    if (this.weaponEl) {
+      const w = activeWeapon(state)
+      if (w) {
+        const def = WEAPONS[w.defId]
+        const slots = ['主', '副', '刀']
+        this.weaponEl.textContent = def.category === 'knife'
+          ? `${slots[p.activeSlot]} ${def.name}`
+          : `${slots[p.activeSlot]} ${def.name}  ${w.ammoMag}/${w.ammoReserve}${w.reloadUntilTick > 0 ? ' · 换弹中…' : ''}`
+      }
+    }
     this.fpsEl.textContent = String(fps)
     this.tickEl.textContent = String(state.tick)
   }

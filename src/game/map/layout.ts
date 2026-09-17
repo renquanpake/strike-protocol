@@ -1,6 +1,6 @@
 import type { Vec3 } from '../../engine/math'
 
-export type BrushMaterial = 'concrete' | 'metal' | 'wood' | 'sand' | 'glass'
+export type BrushMaterial = 'concrete' | 'metal' | 'wood' | 'sand' | 'glass' | 'ladder'
 
 export interface Brush {
   /** 脚底坐标系：min.y 为底面 */
@@ -9,6 +9,8 @@ export interface Brush {
   material: BrushMaterial
   /** 仅碰撞不可见 */
   clip?: boolean
+  /** 梯子：不作实心碰撞，可攀爬 */
+  ladder?: boolean
 }
 
 export interface LevelDef {
@@ -26,11 +28,13 @@ const b = (
   d: number,
   material: BrushMaterial,
   clip = false,
+  ladder = false,
 ): Brush => ({
   min: { x: cx - w / 2, y: cy, z: cz - d / 2 },
   max: { x: cx + w / 2, y: cy + h, z: cz + d / 2 },
   material,
   clip,
+  ladder: ladder || undefined,
 })
 
 /**
@@ -62,6 +66,8 @@ export function practiceLevel(): LevelDef {
       // 远处地标塔（视野参照）
       b(400, 0, -300, 96, 240, 96, 'concrete'),
       b(400, 240, -300, 32, 48, 32, 'metal'),
+      // 梯子（M1 攀爬验证，不作实心碰撞；顶部 160u 落下冲击 530u/s < 580 无坠落伤害）
+      b(300, 0, -300, 8, 160, 8, 'ladder', false, true),
     ],
   }
 }

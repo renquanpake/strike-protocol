@@ -7,10 +7,20 @@ export interface InputFrame {
   back: number
   left: number
   right: number
+  /** 跳跃键按下当帧（边沿触发） */
   jumpQueued: boolean
+  /** 跳跃键持续按住（bhop 自动起跳用） */
+  jumpHeld: boolean
+  /** 开火按下当帧 */
+  fireQueued: boolean
+  /** 开火键持续按住（全自动武器连发） */
+  fireHeld: boolean
+  /** 换弹按下当帧 */
+  reloadQueued: boolean
+  /** 切槽按下当帧（0=primary 1=secondary 2=knife），无则为 null */
+  switchSlot: number | null
   crouch: boolean
   walk: boolean
-  reload: boolean
   mouseDX: number
   mouseDY: number
 }
@@ -21,9 +31,13 @@ const EMPTY: InputFrame = {
   left: 0,
   right: 0,
   jumpQueued: false,
+  jumpHeld: false,
+  fireQueued: false,
+  fireHeld: false,
+  reloadQueued: false,
+  switchSlot: null,
   crouch: false,
   walk: false,
-  reload: false,
   mouseDX: 0,
   mouseDY: 0,
 }
@@ -33,6 +47,10 @@ export const emptyInput = (): InputFrame => ({ ...EMPTY })
 export class InputController {
   private keys = new Set<string>()
   private jumpQueued = false
+  private fireQueued = false
+  private fireHeldFlag = false
+  private reloadQueued = false
+  private switchSlot: number | null = null
   private mouseDX = 0
   private mouseDY = 0
   private canvas: HTMLCanvasElement | null = null
@@ -46,6 +64,8 @@ export class InputController {
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
     document.addEventListener('mousemove', this.onMouseMove)
+    document.addEventListener('mousedown', this.onMouseDown)
+    document.addEventListener('mouseup', this.onMouseUp)
     canvas.addEventListener('click', this.onClick)
   }
 
@@ -57,6 +77,8 @@ export class InputController {
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     document.removeEventListener('mousemove', this.onMouseMove)
+    document.removeEventListener('mousedown', this.onMouseDown)
+    document.removeEventListener('mouseup', this.onMouseUp)
   }
 
   private onClick = (): void => {
@@ -70,6 +92,10 @@ export class InputController {
       e.preventDefault()
       if (!this.keys.has('Space')) this.jumpQueued = true
     }
+    if (e.code === 'KeyR' && !this.keys.has('KeyR')) this.reloadQueued = true
+    if (e.code === 'Digit1' && !this.keys.has('Digit1')) this.switchSlot = 0
+    if (e.code === 'Digit2' && !this.keys.has('Digit2')) this.switchSlot = 1
+    if (e.code === 'Digit3' && !this.keys.has('Digit3')) this.switchSlot = 2
     this.keys.add(e.code)
   }
 
@@ -83,7 +109,19 @@ export class InputController {
     this.mouseDY += e.movementY
   }
 
-  /** 每个逻辑 tick 调用一次：读取键位快照并消费鼠标增量 */
+  private onMouseDown = (e: MouseEvent): void => {
+    if (!this.locked) return
+    if (e.button === 0) {
+      this.fireQueued = true
+      this.fireHeldFlag = true
+    }
+  }
+
+  private onMouseUp = (e: MouseEvent): void => {
+    if (e.button === 0) this.fireHeldFlag = false
+  }
+
+  /** 每个逻辑 tick 调用一次：读取键位快照并消费鼠标/边沿增量 */
   poll(): InputFrame {
     const k = this.keys
     const frame: InputFrame = {
@@ -92,15 +130,28 @@ export class InputController {
       left: k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0,
       right: k.has('KeyD') || k.has('ArrowRight') ? 1 : 0,
       jumpQueued: this.jumpQueued,
+      jumpHeld: k.has('Space'),
+      fireQueued: this.fireQueued,
+      fireHeld: this.fireHeldLocked(),
+      reloadQueued: this.reloadQueued,
+      switchSlot: this.switchSlot,
       crouch: k.has('ControlLeft') || k.has('ControlRight'),
       walk: k.has('ShiftLeft') || k.has('ShiftRight'),
-      reload: k.has('KeyR'),
       mouseDX: this.mouseDX,
       mouseDY: this.mouseDY,
     }
     this.jumpQueued = false
+    this.fireQueued = false
+    this.reloadQueued = false
+    this.switchSlot = null
     this.mouseDX = 0
     this.mouseDY = 0
     return frame
+  }
+
+  /** 左键按住状态（仅 pointer lock 期间有效） */
+  private fireHeldLocked(): boolean {
+    if (!this.locked) return false
+    return this.fireHeldFlag
   }
 }

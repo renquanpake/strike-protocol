@@ -1,9 +1,30 @@
 import type { Vec3 } from '../../engine/math'
-import type { Brush } from '../map/layout'
+import { v3 } from '../../engine/math'
+import type { Brush, LevelDef } from '../map/layout'
 
 const EPS = 1e-3
 /** 单 tick 最大穿透容差（maxFallSpeed*dt ≈ 10.9u） */
 const Y_TOLERANCE = 24
+/** 梯子抓取容差（向四周放宽 u） */
+const LADDER_TOLERANCE = 6
+
+/** 预处理的地图：实心碰撞体与梯子分离，避免逐 tick 过滤 */
+export interface PreppedLevel {
+  solids: Brush[]
+  ladders: Brush[]
+  spawn: Vec3
+}
+
+export function prepareLevel(level: LevelDef): PreppedLevel {
+  const solids: Brush[] = []
+  const ladders: Brush[] = []
+  for (const b of level.brushes) {
+    if (b.clip) continue
+    if (b.ladder) ladders.push(b)
+    else solids.push(b)
+  }
+  return { solids, ladders, spawn: v3(level.spawn.x, level.spawn.y, level.spawn.z) }
+}
 
 function overlapXZ(px: number, pz: number, r: number, b: Brush): boolean {
   return (
@@ -71,4 +92,22 @@ export function collideBrushes(
     }
   }
   return onGround
+}
+
+/** 脚底 AABB 与梯子是否重叠（含容差），用于判定可抓取 */
+export function overlapLadder(
+  pos: Vec3,
+  height: number,
+  radius: number,
+  l: Brush,
+): boolean {
+  const t = LADDER_TOLERANCE
+  return (
+    pos.x + radius > l.min.x - t &&
+    pos.x - radius < l.max.x + t &&
+    pos.z + radius > l.min.z - t &&
+    pos.z - radius < l.max.z + t &&
+    pos.y + height > l.min.y &&
+    pos.y < l.max.y + t
+  )
 }
