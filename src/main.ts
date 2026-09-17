@@ -7,6 +7,7 @@ import { updatePlayerMovement } from './game/systems/movement'
 import { updateWeaponSystem, fireWeapon } from './game/systems/weapon'
 import { updateTargets } from './game/systems/targets'
 import { updateRound } from './game/systems/round'
+import { createBotContext, updateBots, type BotContext } from './game/systems/bot'
 import { emptyInput } from './engine/input'
 import { TARGET_PART_LOCAL } from './game/entities/target'
 import { FixedLoop } from './engine/loop'
@@ -26,10 +27,11 @@ const radarCanvas = document.getElementById('radar') as HTMLCanvasElement
 const level = matchLevel()
 const prepped = prepareLevel(level)
 const textures: TextureMap = buildTextures()
-const nav = buildNavGrid(prepped, 24)
+const nav = buildNavGrid(prepped, 48)
 
 const state: GameState = createGameState(level.spawns.T, level.spawns.CT, CONFIG.healthMax, CONFIG.startMoney)
 const events = new EventBus()
+const botCtx: BotContext = createBotContext(state, level.sites)
 
 state.round.phaseEndTick = Math.round((CONFIG.warmupMs / 1000) * CONFIG.tickRate)
 state.targets = []
@@ -71,8 +73,9 @@ const loop = new FixedLoop(CONFIG.tickRate)
 
 function stepLogic(dt: number): void {
   state.players[0].input = input.poll()
+  updateBots(state, prepped, nav, botCtx, events, dt)
   for (const p of state.players) {
-    if (p.id !== 0) p.input = emptyInput()
+    if (p.id !== 0 && !p.isBot) p.input = emptyInput()
     if (!p.alive) continue
     updatePlayerMovement(state, p, prepped, dt)
     updateWeaponSystem(state, p, events)

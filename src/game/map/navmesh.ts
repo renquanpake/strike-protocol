@@ -42,8 +42,8 @@ export function buildNavGrid(level: PreppedLevel, cell = 24): NavGrid {
         }
       }
       const i = iz * w + ix
-      if (hasFloor && top <= 200) {
-        // 只认 200u 以内的顶面（地标塔顶除外）
+      if (hasFloor && top <= 60) {
+        // 只认 60u 以内的顶面为可走地面（更高视为墙体，A* 绕行）
         height[i] = top
         walkable[i] = 1
       }
