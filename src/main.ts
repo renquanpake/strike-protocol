@@ -1,10 +1,11 @@
 import { CONFIG } from './game/config'
 import { createGameState, type GameState } from './game/state'
-import { practiceLevel } from './game/map/layout'
+import { matchLevel } from './game/map/match'
 import { prepareLevel } from './game/physics/collision'
+import { buildNavGrid } from './game/map/navmesh'
 import { updatePlayerMovement } from './game/systems/movement'
 import { updateWeaponSystem, fireWeapon } from './game/systems/weapon'
-import { updateTargets, rangeTargets } from './game/systems/targets'
+import { updateTargets } from './game/systems/targets'
 import { updateRound } from './game/systems/round'
 import { emptyInput } from './engine/input'
 import { TARGET_PART_LOCAL } from './game/entities/target'
@@ -12,37 +13,27 @@ import { FixedLoop } from './engine/loop'
 import { InputController } from './engine/input'
 import { EventBus } from './engine/eventbus'
 import { GameRenderer, type TargetDef } from './engine/renderer'
+import { buildTextures, type TextureMap } from './engine/textures'
 import { HUD } from './ui/hud'
 import { BuyMenu } from './ui/buymenu'
 import { Scoreboard } from './ui/scoreboard'
-
-const MAT_COLORS: Record<string, [number, number]> = {
-  concrete: [0x9aa0a8, 1],
-  metal: [0x767e88, 1],
-  wood: [0x9c6b3f, 1],
-  sand: [0xc9a86a, 1],
-  glass: [0x9fd8e8, 0.45],
-  ladder: [0xd8c25a, 0.85],
-}
+import { Radar } from './ui/radar'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const hudRoot = document.getElementById('hud') as HTMLElement
+const radarCanvas = document.getElementById('radar') as HTMLCanvasElement
 
-const level = practiceLevel()
+const level = matchLevel()
 const prepped = prepareLevel(level)
-const state: GameState = createGameState(
-  level.spawns.T,
-  level.spawns.CT,
-  CONFIG.healthMax,
-  CONFIG.startMoney,
-)
+const textures: TextureMap = buildTextures()
+const nav = buildNavGrid(prepped, 24)
+
+const state: GameState = createGameState(level.spawns.T, level.spawns.CT, CONFIG.healthMax, CONFIG.startMoney)
 const events = new EventBus()
 
-// warmup 时长
 state.round.phaseEndTick = Math.round((CONFIG.warmupMs / 1000) * CONFIG.tickRate)
+state.targets = []
 
-// 靶子
-state.targets = rangeTargets()
 const targetDefs: TargetDef[] = state.targets.map((t) => ({
   id: t.id,
   x: t.position.x,
@@ -56,14 +47,11 @@ const targetDefs: TargetDef[] = state.targets.map((t) => ({
 // 渲染
 const renderer = new GameRenderer(canvas, CONFIG.fov)
 renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar)
-renderer.addGroundGrid(1024, 64, 0.15)
 for (const b of level.brushes) {
   if (b.clip) continue
-  const [color, opacity] = MAT_COLORS[b.material] ?? [0x888888, 1]
-  renderer.addBox(b.min, b.max, color, opacity)
+  renderer.addBox(b.min, b.max, 0xffffff, b.material === 'glass' ? 0.45 : 1, b.material, textures)
 }
 renderer.addTargets(targetDefs)
-// Bot / C4
 for (const p of state.players) {
   if (p.id === 0) continue
   const color = p.team === 'T' ? 0x4caf50 : 0x5c86c5
@@ -71,22 +59,18 @@ for (const p of state.players) {
 }
 renderer.addDynamicBox('c4', 14, 8, 10, 0xd0342c)
 
-// 输入
+// 输入 / UI
 const input = new InputController()
 input.attach(canvas)
-
 const hud = new HUD(hudRoot)
 const buyMenu = new BuyMenu(hudRoot, state, events)
 const scoreboard = new Scoreboard(hudRoot, state)
+const radar = new Radar(radarCanvas, prepped)
 const roundMsgEl = document.getElementById('roundmsg') as HTMLElement | null
 const loop = new FixedLoop(CONFIG.tickRate)
 
-function localInput(): void {
-  state.players[0].input = input.poll()
-}
-
 function stepLogic(dt: number): void {
-  localInput()
+  state.players[0].input = input.poll()
   for (const p of state.players) {
     if (p.id !== 0) p.input = emptyInput()
     if (!p.alive) continue
@@ -102,13 +86,7 @@ function stepLogic(dt: number): void {
 function refreshDynamic(): void {
   for (const p of state.players) {
     if (p.id === 0) continue
-    renderer.updateDynamicBox(
-      `bot:${p.id}`,
-      p.position.x,
-      p.position.y,
-      p.position.z,
-      p.alive,
-    )
+    renderer.updateDynamicBox(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.alive)
   }
   const c4 = state.round.c4
   const c4Visible = c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted'
@@ -137,7 +115,6 @@ function frame(now: number): void {
 
   const { alpha } = loop.step(now, stepLogic)
 
-  // 买枪菜单开关（购买窗口内）
   if (p.input.buyQueued) buyMenu.toggle()
   buyMenu.sync()
   scoreboard.update(p.input.scoreboardHeld)
@@ -145,6 +122,7 @@ function frame(now: number): void {
   refreshTargetDefs()
   renderer.updateTargets(targetDefs)
   refreshDynamic()
+  radar.update(state)
 
   const eye = p.crouching ? CONFIG.crouchEyeHeight : CONFIG.eyeHeight
   renderer.setCamera({
@@ -156,7 +134,6 @@ function frame(now: number): void {
   })
   renderer.render()
 
-  // 回合消息
   if (roundMsgEl) {
     const r = state.round
     if (r.phase === 'matchEnd') {
@@ -188,10 +165,12 @@ window.addEventListener('resize', () => renderer.resize())
 interface DebugAPI {
   state(): GameState
   tickOnce(): void
+  nav?: unknown
 }
 if (import.meta.env.DEV) {
   ;(window as unknown as { __game?: DebugAPI }).__game = {
     state: () => state,
     tickOnce: () => stepLogic(1 / CONFIG.tickRate),
+    nav,
   }
 }

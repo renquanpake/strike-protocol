@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { Vec3 } from './math'
+import type { TextureMap } from './textures'
 
 /** 单帧相机姿态（由 main 完成插值后下发） */
 export interface CameraPose {
@@ -52,14 +53,21 @@ export class GameRenderer {
     this.scene.add(grid)
   }
 
-  addBox(min: Vec3, max: Vec3, color: number, opacity = 1): void {
+  addBox(min: Vec3, max: Vec3, color: number, opacity = 1, material?: string, textures?: TextureMap): void {
     const w = max.x - min.x
     const h = max.y - min.y
     const d = max.z - min.z
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity }),
-    )
+    const tex = material ? textures?.[material] : undefined
+    const mat = new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity })
+    if (tex) {
+      const t = tex.clone()
+      t.needsUpdate = true
+      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(Math.max(1, Math.round(w / 96)), Math.max(1, Math.round(h / 96)))
+      mat.map = t
+      mat.color.setHex(0xffffff) // 贴图自带颜色
+    }
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
     mesh.position.set(min.x + w / 2, min.y + h / 2, min.z + d / 2)
     this.scene.add(mesh)
   }
