@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STRIKE PROTOCOL</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: 'Courier New', monospace;
+      }
+      #game {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        color: #fff;
+        user-select: none;
+      }
+      #crosshair {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 4px;
+        height: 4px;
+        margin: -2px 0 0 -2px;
+        border: 1px solid #0f0;
+        border-radius: 50%;
+        opacity: 0.9;
+      }
+      #lock-hint {
+        position: absolute;
+        left: 50%;
+        top: 62%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.55);
+        border: 1px solid rgba(140, 200, 255, 0.5);
+        border-radius: 4px;
+        padding: 14px 22px;
+        font-size: 15px;
+        line-height: 1.7;
+        text-align: center;
+        letter-spacing: 0.06em;
+      }
+      #lock-hint .title {
+        font-size: 17px;
+        color: #ffd257;
+        margin-bottom: 6px;
+      }
+      #status {
+        position: absolute;
+        left: 12px;
+        top: 10px;
+        font-size: 12px;
+        line-height: 1.6;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 8px 10px;
+        border-radius: 3px;
+        white-space: pre;
+      }
+      #keys {
+        position: absolute;
+        left: 12px;
+        bottom: 10px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.75);
+        background: rgba(0, 0, 0, 0.35);
+        padding: 6px 9px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud">
+      <div id="crosshair"></div>
+      <div id="lock-hint">
+        <div class="title">STRIKE PROTOCOL — M0</div>
+        点击画面锁定鼠标开始<br />
+        WASD 移动 / 空格 跳跃 / Shift 静走 / Ctrl 蹲
+      </div>
+      <div id="status"></div>
+      <div id="keys">FPS <span id="fps">--</span> · TICK <span id="tick">0</span></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
