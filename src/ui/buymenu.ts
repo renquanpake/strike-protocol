@@ -3,23 +3,55 @@ import { WEAPONS } from '../game/weapons'
 import { canBuyNow, buyItem, GEAR_PRICES } from '../game/economy'
 import type { EventBus } from '../engine/eventbus'
 
-const BUYABLE: { id: string; label: string }[] = [
-  { id: 'glock', label: 'G-19 手枪' },
-  { id: 'mp9', label: 'MP-9 冲锋枪' },
-  { id: 'm4', label: 'M4 步枪' },
-  { id: 'awp', label: 'AWP 狙击枪' },
-  { id: 'xm1014', label: 'XM-14 霰弹枪' },
-  { id: 'he', label: '高爆手雷' },
-  { id: 'flash', label: '闪光弹' },
-  { id: 'smoke', label: '烟雾弹' },
-  { id: 'molotov', label: '燃烧瓶' },
-  { id: 'kit', label: '拆弹钳' },
+interface BuyItem {
+  id: string
+  label: string
+  price: number
+  owned?: (p: PlayerEntity) => boolean
+}
+
+const GRENADE_ORDER = ['he', 'flash', 'smoke', 'molotov']
+
+const SECTIONS: { title: string; items: BuyItem[] }[] = [
+  {
+    title: '副武器',
+    items: [
+      { id: 'glock', label: 'G-19', price: WEAPONS.glock.price },
+      { id: 'deagle', label: '大雕', price: WEAPONS.deagle.price },
+    ],
+  },
+  {
+    title: '主武器',
+    items: [
+      { id: 'mp9', label: 'MP-9', price: WEAPONS.mp9.price },
+      { id: 'p90', label: 'P-90', price: WEAPONS.p90.price },
+      { id: 'm4', label: 'M4', price: WEAPONS.m4.price },
+      { id: 'm249', label: 'M-249', price: WEAPONS.m249.price },
+      { id: 'awp', label: 'AWP', price: WEAPONS.awp.price },
+      { id: 'ssg08', label: 'SSG 08', price: WEAPONS.ssg08.price },
+      { id: 'xm1014', label: 'XM-14', price: WEAPONS.xm1014.price },
+      { id: 'sawnoff', label: '短管', price: WEAPONS.sawnoff.price },
+    ],
+  },
+  {
+    title: '投掷物',
+    items: GRENADE_ORDER.map((id) => ({
+      id,
+      label: { he: '高爆', flash: '闪光', smoke: '烟雾', molotov: '燃烧' }[id] ?? id,
+      price: WEAPONS[id].price,
+      owned: (p: PlayerEntity) => p.weapons.grenades[GRENADE_ORDER.indexOf(id)] !== null,
+    })),
+  },
+  {
+    title: '装备',
+    items: [{ id: 'kit', label: '拆弹钳', price: GEAR_PRICES.kit, owned: (p: PlayerEntity) => p.hasKit }],
+  },
 ]
 
-/** 买枪菜单（B 键开关，DOM 面板） */
+/** 买枪菜单（B 键开关，分栏 DOM 面板） */
 export class BuyMenu {
   private root: HTMLElement
-  private rows: Map<string, HTMLElement> = new Map()
+  private rows = new Map<string, HTMLElement>()
   private open = false
 
   constructor(container: HTMLElement, private state: GameState, private events: EventBus) {
@@ -33,21 +65,23 @@ export class BuyMenu {
   private build(): void {
     const money = document.createElement('div')
     money.className = 'money'
-    money.textContent = ''
     this.root.appendChild(money)
-    for (const item of BUYABLE) {
-      const row = document.createElement('div')
-      row.className = 'buy-row'
-      const price = item.id === 'kit' ? GEAR_PRICES.kit : WEAPONS[item.id].price
-      row.textContent = `${item.label}  $${price}`
-      row.addEventListener('click', () => {
-        const p = this.state.players[0]
-        if (buyItem(this.state, p, item.id, this.events)) {
-          this.refresh()
-        }
-      })
-      this.root.appendChild(row)
-      this.rows.set(item.id, row)
+    for (const section of SECTIONS) {
+      const head = document.createElement('div')
+      head.className = 'bm-section'
+      head.textContent = section.title
+      this.root.appendChild(head)
+      for (const item of section.items) {
+        const row = document.createElement('div')
+        row.className = 'buy-row'
+        row.textContent = `${item.label}  $${item.price}`
+        row.addEventListener('click', () => {
+          const p = this.state.players[0]
+          if (buyItem(this.state, p, item.id, this.events)) this.refresh()
+        })
+        this.root.appendChild(row)
+        this.rows.set(item.id, row)
+      }
     }
   }
 
@@ -58,7 +92,6 @@ export class BuyMenu {
     if (this.open) this.refresh()
   }
 
-  /** 离开购买窗口自动关闭 */
   sync(): void {
     if (this.open && !canBuyNow(this.state)) {
       this.open = false
@@ -68,15 +101,14 @@ export class BuyMenu {
 
   private refresh(): void {
     const p: PlayerEntity = this.state.players[0]
-    const greOrder = ['he', 'flash', 'smoke', 'molotov']
-    for (const item of BUYABLE) {
-      const row = this.rows.get(item.id)!
-      const price = item.id === 'kit' ? GEAR_PRICES.kit : WEAPONS[item.id].price
-      let owned = false
-      if (item.id === 'kit') owned = p.hasKit
-      else if (greOrder.includes(item.id)) owned = p.weapons.grenades[greOrder.indexOf(item.id)] !== null
-      row.style.opacity = owned || p.money < price ? '0.4' : '1'
-      row.style.pointerEvents = owned ? 'none' : 'auto'
+    for (const section of SECTIONS) {
+      for (const item of section.items) {
+        const row = this.rows.get(item.id)!
+        const owned = item.owned ? item.owned(p) : false
+        row.style.opacity = owned || p.money < item.price ? '0.4' : '1'
+        row.style.pointerEvents = owned ? 'none' : 'auto'
+        row.textContent = `${item.label}  $${item.price}${owned ? ' · 已持有' : ''}`
+      }
     }
     const money = this.root.querySelector('.money')
     if (money) money.textContent = `$${p.money}`

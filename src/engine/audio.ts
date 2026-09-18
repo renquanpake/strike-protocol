@@ -7,10 +7,15 @@ type Ctx = AudioContext
 
 const weaponParams: Record<string, { filter: number; dur: number; gain: number; sub: number }> = {
   glock: { filter: 1800, dur: 0.08, gain: 0.5, sub: 90 },
+  deagle: { filter: 900, dur: 0.16, gain: 0.75, sub: 60 },
   mp9: { filter: 1500, dur: 0.09, gain: 0.5, sub: 80 },
+  p90: { filter: 1400, dur: 0.08, gain: 0.55, sub: 75 },
   m4: { filter: 1000, dur: 0.12, gain: 0.6, sub: 70 },
+  m249: { filter: 900, dur: 0.13, gain: 0.6, sub: 65 },
   awp: { filter: 500, dur: 0.22, gain: 0.85, sub: 55 },
+  ssg08: { filter: 550, dur: 0.2, gain: 0.8, sub: 55 },
   xm1014: { filter: 400, dur: 0.18, gain: 0.8, sub: 50 },
+  sawnoff: { filter: 450, dur: 0.16, gain: 0.75, sub: 50 },
   knife: { filter: 900, dur: 0.05, gain: 0.2, sub: 0 },
   he: { filter: 600, dur: 0.05, gain: 0.15, sub: 0 },
   flash: { filter: 2000, dur: 0.04, gain: 0.15, sub: 0 },

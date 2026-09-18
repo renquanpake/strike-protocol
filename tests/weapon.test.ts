@@ -7,6 +7,7 @@ import { createGameState } from '../src/game/state'
 import { prepareLevel, type PreppedLevel } from '../src/game/physics/collision'
 import type { LevelDef } from '../src/game/map/layout'
 import { WEAPONS, newWeaponInstance } from '../src/game/weapons'
+import { makeTarget } from '../src/game/entities/target'
 import {
   activeWeapon,
   fireWeapon,
@@ -33,6 +34,10 @@ function makeState() {
   const p = state.players[0]
   p.position = v3(0, 0, 0)
   p.onGround = true
+  // 其余玩家停到射击线外，避免其 hitbox 阻挡射线
+  for (let i = 1; i < state.players.length; i++) {
+    state.players[i].position = v3(i % 2 === 0 ? 500 : -500, 0, 400)
+  }
   return { state, p }
 }
 
@@ -130,7 +135,6 @@ describe('shot damage formula', () => {
     const d = shotDamage(WEAPONS.awp, 'head', 0, 0)
     expect(d).toBeCloseTo(WEAPONS.awp.damage * 4, 1)
   })
-
   it('距离衰减（falloffStart 后线性至 rangeModifier）', () => {
     const m4 = WEAPONS.m4
     const near = shotDamage(m4, 'chest', 0, 0)
@@ -153,3 +157,101 @@ describe('shot damage formula', () => {
     expect(d).toBeCloseTo(WEAPONS.glock.damage * 0.7, 1)
   })
 })
+
+describe('武器库完整性 (M8)', () => {
+  it('全部 15 种武器数值表合法', () => {
+    const ids = Object.keys(WEAPONS)
+    expect(ids.length).toBeGreaterThanOrEqual(15)
+    for (const id of ids) {
+      const w = WEAPONS[id]
+      expect(w.fireRateMs).toBeGreaterThan(0)
+      expect(w.magazine).toBeGreaterThanOrEqual(0)
+      expect(w.damage).toBeGreaterThanOrEqual(0)
+      if (w.category !== 'grenade' && w.category !== 'knife') {
+        expect(w.magazine).toBeGreaterThan(0)
+      }
+      if (w.category !== 'knife') expect(w.price).toBeGreaterThan(0)
+      if (w.category !== 'grenade' && w.category !== 'knife') {
+        expect(w.recoilPattern.length).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('10 支枪械覆盖 6 大类', () => {
+    const gunCats = new Set(
+      Object.values(WEAPONS)
+        .filter((w) => !['knife', 'grenade', 'gear'].includes(w.category))
+        .map((w) => w.category),
+    )
+    expect(gunCats.has('pistol')).toBe(true)
+    expect(gunCats.has('smg')).toBe(true)
+    expect(gunCats.has('rifle')).toBe(true)
+    expect(gunCats.has('sniper')).toBe(true)
+    expect(gunCats.has('shotgun')).toBe(true)
+    expect(gunCats.has('lmg')).toBe(true)
+  })
+})
+
+describe('新枪行为 (M8)', () => {
+  it('P-90 全自动 50 发弹匣', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    p.weapons.primary = newWeaponInstance('p90')
+    p.activeSlot = 0
+    const p90 = p.weapons.primary!
+    const interval = Math.round((WEAPONS.p90.fireRateMs / 1000) * CONFIG.tickRate)
+    let fired = 0
+    for (let tick = 0; tick < interval * 4; tick++) {
+      state.tick = tick
+      p.input = { ...emptyInput(), fireHeld: true }
+      fireWeapon(state, p, prepped, events)
+      if (tick % interval === 0) fired++
+    }
+    expect(p90.ammoMag).toBe(WEAPONS.p90.magazine - 4)
+    expect(fired).toBe(4)
+  })
+
+  it('SSG 08 栓动狙击枪冷却 1300ms', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    p.weapons.primary = newWeaponInstance('ssg08')
+    p.activeSlot = 0
+    const ssg = p.weapons.primary!
+    const cooldown = Math.round((WEAPONS.ssg08.fireRateMs / 1000) * CONFIG.tickRate)
+    state.tick = 0
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    expect(ssg.ammoMag).toBe(WEAPONS.ssg08.magazine - 1)
+    // 冷却期内再按不发射
+    state.tick = Math.floor(cooldown / 2)
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    expect(ssg.ammoMag).toBe(WEAPONS.ssg08.magazine - 1)
+  })
+
+  it('短管霰弹枪单发 6 枚弹丸近距爆伤', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    state.targets = [makeTarget(0, 0, 0, -60)]
+    p.weapons.primary = newWeaponInstance('sawnoff')
+    p.activeSlot = 0
+    state.tick = 0
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    // 6 弹丸 × 20 伤害，近距衰减后总伤 > 60
+    expect(state.targets[0].health).toBeLessThan(100 - 60)
+  })
+
+  it('大雕爆头 53×4 近距秒杀 100 血目标', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    state.targets = [makeTarget(0, 0, 0, -200)]
+    p.weapons.secondary = newWeaponInstance('deagle')
+    p.activeSlot = 1
+    state.tick = 0
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    expect(state.targets[0].health).toBeLessThanOrEqual(0)
+  })
+})
+
