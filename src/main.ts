@@ -20,6 +20,10 @@ import { HUD } from './ui/hud'
 import { BuyMenu } from './ui/buymenu'
 import { Scoreboard } from './ui/scoreboard'
 import { Radar } from './ui/radar'
+import { AudioEngine } from './engine/audio'
+import { updateShells, spawnShell, type Shell } from './game/particles'
+import { viewForward, viewRight } from './game/systems/weapon'
+import { v3 } from './engine/math'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const hudRoot = document.getElementById('hud') as HTMLElement
@@ -71,7 +75,84 @@ const scoreboard = new Scoreboard(hudRoot, state)
 const radar = new Radar(radarCanvas, prepped)
 const roundMsgEl = document.getElementById('roundmsg') as HTMLElement | null
 const blindEl = document.getElementById('blind') as HTMLElement | null
+const hitmarkEl = document.getElementById('hitmarker') as HTMLElement | null
+const dmgEl = document.getElementById('dmg') as HTMLElement | null
 const loop = new FixedLoop(CONFIG.tickRate)
+
+// ===== M7：音频 + 粒子（弹壳/枪口火光）+ 命中反馈 =====
+const audio = new AudioEngine()
+const unlockAudio = (): void => audio.init()
+window.addEventListener('pointerdown', unlockAudio, { once: false })
+window.addEventListener('keydown', unlockAudio, { once: false })
+
+// 弹壳池
+const SHELL_POOL = 24
+const shells: Shell[] = Array.from({ length: SHELL_POOL }, (_, i) => ({
+  id: i,
+  position: v3(0, -9999, 0),
+  velocity: v3(),
+  until: 0,
+  active: false,
+}))
+for (let i = 0; i < SHELL_POOL; i++) renderer.addDynamicSphere(`shell:${i}`, 3, 0xd4af37)
+renderer.addDynamicSphere('muzzle', 10, 0xffc24a)
+
+// 枪口火光（本地玩家最近一次开火）
+let muzzleTicks = 0
+let lastShotMuzzle = v3(0, -9999, 0)
+let shellSeq = 1
+
+// 命中反馈计时
+let hitmarkUntil = 0
+let hitmarkHead = false
+let dmgUntil = 0
+
+events.on('shot', (e) => {
+  const p = state.players[e.shooterId]
+  if (!p) return
+  const isLocal = e.shooterId === 0
+  const eyeY = p.position.y + CONFIG.eyeHeight
+  audio.shot(e.weaponId, p.position.x, eyeY, p.position.z, isLocal)
+  if (isLocal) {
+    // 枪口位置：眼位朝前 24u
+    const fwd = viewForward(p.yaw, p.pitch)
+    lastShotMuzzle = v3(p.position.x + fwd.x * 24, eyeY + fwd.y * 24, p.position.z + fwd.z * 24)
+    muzzleTicks = 4
+    // 弹壳
+    const up = v3(0, 1, 0)
+    const right = viewRight(p.yaw, p.pitch)
+    spawnShell(shells, shellSeq++, lastShotMuzzle, right, up, fwd, 200)
+  }
+})
+events.on('hit', (e) => {
+  if (e.attackerId === 0) {
+    audio.hitmarker(e.part)
+    hitmarkUntil = performance.now() + 120
+    hitmarkHead = e.part === 'head'
+  }
+  if (e.victimId === 0) {
+    dmgUntil = performance.now() + 220
+  }
+})
+events.on('grenadeExploded', (e) => {
+  const kind = e.kind === 'flash' ? 'flash' : e.kind === 'molotov' || e.kind === 'smoke' ? e.kind : 'he'
+  audio.explosion(kind, e.x, e.y, e.z)
+})
+events.on('bombExploded', () => {
+  const c4 = state.round.c4
+  audio.explosion('c4', c4.position.x, c4.position.y, c4.position.z)
+})
+events.on('c4Beep', () => {
+  const c4 = state.round.c4
+  audio.c4Beep(c4.position.x, c4.position.y, c4.position.z)
+})
+events.on('footstep', (e) => {
+  const p = state.players[e.playerId]
+  if (!p) return
+  audio.footstep(e.material, e.x, e.y, e.z, e.playerId === 0)
+})
+events.on('reloadStarted', () => audio.reload())
+events.on('roundEnd', (e) => audio.roundEnd(e.winner === 'T'))
 
 function stepLogic(dt: number): void {
   state.players[0].input = input.poll()
@@ -79,7 +160,7 @@ function stepLogic(dt: number): void {
   for (const p of state.players) {
     if (p.id !== 0 && !p.isBot) p.input = emptyInput()
     if (!p.alive) continue
-    updatePlayerMovement(state, p, prepped, dt)
+    updatePlayerMovement(state, p, prepped, dt, events)
     updateWeaponSystem(state, p, events)
     fireWeapon(state, p, prepped, events)
   }
@@ -194,6 +275,28 @@ function frame(now: number): void {
     pitch: prevPitch + (p.pitch - prevPitch) * alpha,
   })
   renderer.render()
+
+  // M7：音频监听者 + 弹壳/火光 + 命中反馈
+  audio.setListener(p.position.x, p.position.y + eye, p.position.z)
+  updateShells(shells, 0, 1 / 60, CONFIG.gravity)
+  for (const s of shells) {
+    renderer.updateDynamicSphere(`shell:${s.id}`, s.position.x, s.position.y, s.position.z, s.active)
+  }
+  if (muzzleTicks > 0) {
+    muzzleTicks -= 1
+    renderer.updateDynamicSphere('muzzle', lastShotMuzzle.x, lastShotMuzzle.y, lastShotMuzzle.z, muzzleTicks > 0)
+  } else {
+    renderer.updateDynamicSphere('muzzle', 0, -9999, 0, false)
+  }
+  const nowMs = performance.now()
+  if (hitmarkEl) {
+    const show = nowMs < hitmarkUntil
+    hitmarkEl.style.opacity = show ? '1' : '0'
+    hitmarkEl.style.color = hitmarkHead ? '#ff4444' : '#ffffff'
+  }
+  if (dmgEl) {
+    dmgEl.style.opacity = nowMs < dmgUntil ? '0.85' : '0'
+  }
 
   if (roundMsgEl) {
     const r = state.round

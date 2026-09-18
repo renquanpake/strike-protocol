@@ -73,6 +73,8 @@ export interface PlayerEntity {
   weapons: WeaponSlots
   /** 闪光致盲截止 tick */
   blindUntil: number
+  /** 脚步计时（ms 累计，触发 footstep 事件用） */
+  stepTimer: number
   /** 本 tick 输入（Bot 为合成输入） */
   input: InputFrame
 }
@@ -153,6 +155,7 @@ export function makePlayer(
       grenades: [null, null, null, null],
     },
     blindUntil: 0,
+    stepTimer: 0,
     input: emptyInput(),
   }
 }

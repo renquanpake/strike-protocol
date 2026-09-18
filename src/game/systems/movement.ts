@@ -1,6 +1,7 @@
 import { CONFIG } from '../config'
 import type { GameState, PlayerEntity } from '../state'
 import { collideBrushes, overlapLadder, type PreppedLevel } from '../physics/collision'
+import type { EventBus } from '../../engine/eventbus'
 
 /** bhop 自动起跳窗口（tick）：落地后 N tick 内仍按住跳跃键则再起跳 */
 function bhopWindowTicks(): number {
@@ -16,6 +17,7 @@ export function updatePlayerMovement(
   p: PlayerEntity,
   level: PreppedLevel,
   dt: number,
+  events?: EventBus,
 ): void {
   const inp = p.input
 
@@ -126,6 +128,27 @@ export function updatePlayerMovement(
     p.health = Math.max(0, p.health - dmg)
   }
 
+  // 脚步（静走无声；空中不触发）
+  if (events && p.onGround && !inp.walk) {
+    const hspeed = Math.hypot(p.velocity.x, p.velocity.z)
+    if (hspeed > 30) {
+      p.stepTimer += hspeed * dt
+      // 约每 40u 一步
+      if (p.stepTimer >= 40) {
+        p.stepTimer = 0
+        const mat = groundMaterial(level, p.position)
+        events.emit({
+          type: 'footstep',
+          playerId: p.id,
+          material: mat,
+          x: p.position.x,
+          y: p.position.y,
+          z: p.position.z,
+        })
+      }
+    }
+  }
+
   // 坠出地图 → 回本队出生点
   if (p.position.y < CONFIG.killFallY) {
     const idx = p.id % 5
@@ -146,4 +169,19 @@ function isOnLadder(p: PlayerEntity, height: number, level: PreppedLevel): boole
     if (overlapLadder(p.position, height, CONFIG.playerRadius, l)) return true
   }
   return false
+}
+
+/** 脚下最高实心顶面的材质（用于脚步音效区分） */
+function groundMaterial(level: PreppedLevel, pos: { x: number; z: number; y: number }): string {
+  let best = -9999
+  let mat = 'sand'
+  for (const b of level.solids) {
+    if (pos.x < b.min.x || pos.x > b.max.x) continue
+    if (pos.z < b.min.z || pos.z > b.max.z) continue
+    if (b.max.y > best && b.max.y <= pos.y + 2) {
+      best = b.max.y
+      mat = b.material
+    }
+  }
+  return mat
 }

@@ -172,6 +172,14 @@ export function updateRound(state: GameState, level: PreppedLevel, events: Event
         }
       }
       if (c4.defuseProgress > 0 && !anyDefusing(state, c4)) c4.defuseProgress = Math.max(0, c4.defuseProgress - dt * 0.5)
+      // C4 滴答（越临近爆炸越密）
+      const remainTicks = c4.explodeAtTick - tick
+      if (remainTicks > 0) {
+        const interval = remainTicks > 640 ? 64 : remainTicks > 320 ? 32 : 16
+        if ((c4.explodeAtTick - tick) % interval === 0) {
+          events.emit({ type: 'c4Beep', remainingMs: (remainTicks / CONFIG.tickRate) * 1000 })
+        }
+      }
       // 爆炸
       if (tick >= c4.explodeAtTick) {
         for (const p of state.players) {

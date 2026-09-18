@@ -187,7 +187,7 @@ export function fireWeapon(
       const dmg = shotDamage(def, part, hit.t, 0)
       t.health -= dmg
       t.hitFlashTick = state.tick
-      events.emit({ type: 'hit', victimId: tid, part, damage: dmg })
+      events.emit({ type: 'hit', victimId: tid, part, damage: dmg, attackerId: p.id })
       if (t.health <= 0) {
         t.alive = false
         t.respawnAtTick = state.tick + msToTicks(2000)
@@ -214,7 +214,7 @@ function applyPlayerHit(
   events: EventBus,
 ): void {
   victim.health -= dmg
-  events.emit({ type: 'hit', victimId: victim.id, part: 'body', damage: dmg })
+  events.emit({ type: 'hit', victimId: victim.id, part: 'body', damage: dmg, attackerId: shooter.id })
   if (victim.health <= 0) {
     victim.alive = false
     victim.deaths += 1
@@ -273,7 +273,7 @@ function meleeStrike(state: GameState, p: PlayerEntity, def: WeaponDef, eye: Vec
     if (!t) return
     t.health -= meleeDmg
     t.hitFlashTick = state.tick
-    events.emit({ type: 'hit', victimId: tid, part: hit.part ?? 'chest', damage: meleeDmg })
+    events.emit({ type: 'hit', victimId: tid, part: hit.part ?? 'chest', damage: meleeDmg, attackerId: p.id })
     if (t.health <= 0) {
       t.alive = false
       t.respawnAtTick = state.tick + msToTicks(2000)
