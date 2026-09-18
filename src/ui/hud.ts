@@ -59,14 +59,14 @@ export class HUD {
   }
 }
 
-function roundLine(state: GameState): string {
+export function roundLine(state: GameState): string {
   const r = state.round
   const p = state.players[0]
   let timer = ''
-  if (r.phase === 'freeze') timer = `BUY ${Math.max(0, r.phaseEndTick - state.tick / CONFIG.tickRate).toFixed(1)}s`
-  else if (r.phase === 'live') timer = `${Math.max(0, r.phaseEndTick - state.tick / CONFIG.tickRate).toFixed(0)}s`
+  if (r.phase === 'freeze') timer = `BUY ${(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate).toFixed(1)}s`
+  else if (r.phase === 'live') timer = `${(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate).toFixed(0)}s`
   else if (r.phase === 'bombPlanted') {
-    const left = Math.max(0, r.c4.explodeAtTick - state.tick / CONFIG.tickRate)
+    const left = Math.max(0, r.c4.explodeAtTick - state.tick) / CONFIG.tickRate
     timer = `C4 ${r.c4.site} ${left.toFixed(0)}s`
   } else if (r.phase === 'warmup') timer = 'WARMUP'
   else if (r.phase === 'roundEnd') timer = 'ROUND OVER'

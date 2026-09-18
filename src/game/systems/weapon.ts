@@ -103,6 +103,10 @@ export function fireWeapon(
   events: EventBus,
 ): void {
   if (!shooter.alive) return
+  // 买枪期/回合间隙禁止开火（对标 CS：仅 live/bombPlanted/warmup 可开火）
+  if (state.round.phase !== 'live' && state.round.phase !== 'bombPlanted' && state.round.phase !== 'warmup') {
+    return
+  }
   const p = shooter
   const inp = p.input
   const w = activeWeapon(p)

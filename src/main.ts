@@ -20,6 +20,7 @@ import { HUD } from './ui/hud'
 import { BuyMenu } from './ui/buymenu'
 import { Scoreboard } from './ui/scoreboard'
 import { Radar } from './ui/radar'
+import { ViewModel } from './ui/viewmodel'
 import { AudioEngine } from './engine/audio'
 import { updateShells, spawnShell, type Shell } from './game/particles'
 import { viewForward, viewRight } from './game/systems/weapon'
@@ -95,7 +96,10 @@ const shells: Shell[] = Array.from({ length: SHELL_POOL }, (_, i) => ({
   active: false,
 }))
 for (let i = 0; i < SHELL_POOL; i++) renderer.addDynamicSphere(`shell:${i}`, 3, 0xd4af37)
-renderer.addDynamicSphere('muzzle', 10, 0xffc24a)
+renderer.addDynamicSphere('muzzle', 6, 0xffd75e)
+
+// 第一人称武器模型
+const viewmodel = new ViewModel(renderer)
 
 // 枪口火光（本地玩家最近一次开火）
 let muzzleTicks = 0
@@ -114,10 +118,12 @@ events.on('shot', (e) => {
   const eyeY = p.position.y + CONFIG.eyeHeight
   audio.shot(e.weaponId, p.position.x, eyeY, p.position.z, isLocal)
   if (isLocal) {
-    // 枪口位置：眼位朝前 24u
+    viewmodel.setKick(4)
+    // 枪口位置：优先用武器模型枪口（随摆动/后坐），首次开火前回退到眼位前 24u
+    const vmMuzzle = viewmodel.getMuzzle()
     const fwd = viewForward(p.yaw, p.pitch)
-    lastShotMuzzle = v3(p.position.x + fwd.x * 24, eyeY + fwd.y * 24, p.position.z + fwd.z * 24)
-    muzzleTicks = 4
+    lastShotMuzzle = vmMuzzle.y > -9000 ? vmMuzzle : v3(p.position.x + fwd.x * 24, eyeY + fwd.y * 24, p.position.z + fwd.z * 24)
+    muzzleTicks = 6
     // 弹壳
     const up = v3(0, 1, 0)
     const right = viewRight(p.yaw, p.pitch)
@@ -154,8 +160,13 @@ events.on('footstep', (e) => {
 events.on('reloadStarted', () => audio.reload())
 events.on('roundEnd', (e) => audio.roundEnd(e.winner === 'T'))
 
+let pendingBuyToggle = false
+
 function stepLogic(dt: number): void {
-  state.players[0].input = input.poll()
+  const frame = input.poll()
+  state.players[0].input = frame
+  // 边沿标志在 tick 级累积，避免一帧多 tick 时被后续 tick 覆盖丢失
+  if (frame.buyQueued) pendingBuyToggle = true
   updateBots(state, prepped, nav, botCtx, events, dt)
   for (const p of state.players) {
     if (p.id !== 0 && !p.isBot) p.input = emptyInput()
@@ -257,7 +268,10 @@ function frame(now: number): void {
 
   const { alpha } = loop.step(now, stepLogic)
 
-  if (p.input.buyQueued) buyMenu.toggle()
+  if (pendingBuyToggle) {
+    pendingBuyToggle = false
+    buyMenu.toggle()
+  }
   buyMenu.sync()
   scoreboard.update(p.input.scoreboardHeld)
 
@@ -274,6 +288,26 @@ function frame(now: number): void {
     yaw: prevYaw + (p.yaw - prevYaw) * alpha,
     pitch: prevPitch + (p.pitch - prevPitch) * alpha,
   })
+  // 第一人称武器模型：与相机同插值姿态；死亡时隐藏
+  if (p.alive) {
+    viewmodel.update(
+      p,
+      {
+        x: prevX + (p.position.x - prevX) * alpha,
+        y: prevY + (p.position.y - prevY) * alpha,
+        z: prevZ + (p.position.z - prevZ) * alpha,
+        yaw: prevYaw + (p.yaw - prevYaw) * alpha,
+        pitch: prevPitch + (p.pitch - prevPitch) * alpha,
+        crouching: p.crouching,
+        onGround: p.onGround,
+        velX: p.velocity.x,
+        velZ: p.velocity.z,
+      },
+      state.tick,
+    )
+  } else {
+    viewmodel.hide()
+  }
   renderer.render()
 
   // M7：音频监听者 + 弹壳/火光 + 命中反馈

@@ -75,6 +75,7 @@ export class GameRenderer {
   private targetMeshes: { id: number; group: THREE.Group; parts: THREE.Mesh[]; base: number[] }[] = []
   private dynBoxes: Map<string, { mesh: THREE.Mesh; w: number; h: number; d: number }> = new Map()
   private dynSpheres: Map<string, { mesh: THREE.Mesh }> = new Map()
+  private viewmodels: Map<string, THREE.Mesh> = new Map()
 
   addDynamicBox(id: string, w: number, h: number, d: number, color: number, opacity = 1): void {
     const mesh = new THREE.Mesh(
@@ -107,6 +108,24 @@ export class GameRenderer {
     if (!entry) return
     entry.mesh.visible = visible
     entry.mesh.position.set(x, y, z)
+  }
+
+  /** 第一人称武器模型部件（中心定位 + yaw 朝向，供 viewmodel 系统逐帧驱动） */
+  addViewmodelBox(id: string, w: number, h: number, d: number, color: number): void {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshLambertMaterial({ color }),
+    )
+    this.scene.add(mesh)
+    this.viewmodels.set(id, mesh)
+  }
+
+  updateViewmodelBox(id: string, x: number, y: number, z: number, visible: boolean, rotY: number): void {
+    const mesh = this.viewmodels.get(id)
+    if (!mesh) return
+    mesh.visible = visible
+    mesh.position.set(x, y, z)
+    mesh.rotation.set(0, rotY, 0)
   }
 
   addTargets(defs: TargetDef[]): void {

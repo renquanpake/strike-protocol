@@ -42,6 +42,21 @@ function makeState() {
 }
 
 describe('weapon system', () => {
+  it('买枪期(freeze)禁止开火，live 可开火（对标 CS）', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    const glock = p.weapons.secondary!
+    state.round.phase = 'freeze'
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    expect(glock.ammoMag).toBe(WEAPONS.glock.magazine) // 买枪期未消耗弹药
+    state.round.phase = 'live'
+    state.tick = 1
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    expect(glock.ammoMag).toBe(WEAPONS.glock.magazine - 1)
+  })
+
   it('半自动手枪边沿触发且受冷却限制', () => {
     const { state, p } = makeState()
     const events = new EventBus()
