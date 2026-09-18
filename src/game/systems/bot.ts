@@ -6,6 +6,8 @@ import type { NavGrid } from '../map/navmesh'
 import { astar } from '../map/navmesh'
 import { raycastBoxes } from '../physics/raycast'
 import { buyItem } from '../economy'
+import { inSmoke, throwGrenade } from './grenade'
+import { viewForward } from './weapon'
 import { v3, type Vec3 } from '../../engine/math'
 import type { EventBus } from '../../engine/eventbus'
 import { emptyInput, type InputFrame } from '../../engine/input'
@@ -23,6 +25,8 @@ export interface BotBrain {
   stuckTicks: number
   /** 最近一次感知到的敌人 id（用于反应窗口只在换目标时重置） */
   perceivedId: number | null
+  nextThrowTick: number
+  smokedThisRound: boolean
 }
 
 export interface BotContext {
@@ -50,6 +54,8 @@ export function createBotContext(
         nextShotTick: 0,
         stuckTicks: 0,
         perceivedId: null,
+        nextThrowTick: 0,
+        smokedThisRound: false,
       })
     }
   }
@@ -119,13 +125,15 @@ export function updateBots(
     if (engaging && enemy) {
       brain.targetId = enemy.id
       brain.path = null
+      const blinded = tick < p.blindUntil
       const eye = { x: p.position.x, y: p.position.y + CONFIG.eyeHeight, z: p.position.z }
       const aimY = enemy.position.y + (rng.float() < 0.3 ? 60 : 44)
       const dx = enemy.position.x - eye.x
       const dy = aimY - eye.y
       const dz = enemy.position.z - eye.z
       const dist = Math.max(1, Math.hypot(dx, dy, dz))
-      const sigma = 0.02 + 0.00012 * dist
+      // 被致盲时瞄准误差放大
+      const sigma = (0.02 + 0.00012 * dist) * (blinded ? 6 : 1)
       brain.aimErrYaw = gauss(rng) * sigma
       brain.aimErrPitch = gauss(rng) * sigma * 0.6
       const desiredYaw = Math.atan2(-dx, -dz) + brain.aimErrYaw
@@ -139,17 +147,40 @@ export function updateBots(
       const toRight = Math.floor(tick / 32) % 2 === 0
       if (toRight) inp.right = 1
       else inp.left = 1
-      // 开火
-      const w = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
-      const def = w ? WEAPONS[w.defId] : null
-      if (def && w && w.ammoMag > 0 && w.reloadUntilTick === 0) {
-        if (def.auto) {
-          inp.fireHeld = true
-        } else if (tick >= brain.nextShotTick) {
-          inp.fireQueued = true
-          brain.nextShotTick = tick + Math.round((def.fireRateMs * 1.15 / 1000) * CONFIG.tickRate)
+      // 开火（被致盲不开火）
+      if (!blinded) {
+        const w = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
+        const def = w ? WEAPONS[w.defId] : null
+        if (def && w && w.ammoMag > 0 && w.reloadUntilTick === 0) {
+          if (def.auto) {
+            inp.fireHeld = true
+          } else if (tick >= brain.nextShotTick) {
+            inp.fireQueued = true
+            brain.nextShotTick = tick + Math.round((def.fireRateMs * 1.15 / 1000) * CONFIG.tickRate)
+          }
         }
       }
+      // 投掷物使用
+      const fwd = viewForward(p.yaw, p.pitch)
+      const throwDir = v3(dx / dist, dy / dist, dz / dist)
+      const he = p.weapons.grenades[0]
+      if (p.team === 'T' && he && he.ammoMag > 0 && tick >= brain.nextThrowTick && dist < 400) {
+        throwGrenade(state, p, 'he', { x: p.position.x, y: p.position.y + 40, z: p.position.z }, throwDir, events)
+        he.ammoMag -= 1
+        brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
+      }
+      const smoke = p.weapons.grenades[2]
+      const c4 = state.round.c4
+      if (p.team === 'CT' && smoke && smoke.ammoMag > 0 && c4.state === 'planted' && !brain.smokedThisRound && tick >= brain.nextThrowTick) {
+        const sdx = c4.position.x - p.position.x
+        const sdz = c4.position.z - p.position.z
+        const sdist = Math.max(1, Math.hypot(sdx, sdz))
+        throwGrenade(state, p, 'smoke', { x: p.position.x, y: p.position.y + 40, z: p.position.z }, v3(sdx / sdist, 0.3, sdz / sdist), events)
+        smoke.ammoMag -= 1
+        brain.smokedThisRound = true
+        brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
+      }
+      void fwd
     } else {
       brain.targetId = null
       if (brain.path === null || tick >= brain.replanAt) {
@@ -238,6 +269,8 @@ function perceiveEnemy(state: GameState, level: PreppedLevel, p: PlayerEntity, b
     if (hit && hit.t < dist - 12) continue
     const dotf = fx * dx * inv + fz * dz * inv
     if (dotf < -0.34) continue
+    // 烟雾遮蔽：LOS 中点冒烟则视为不可见
+    if (inSmoke(state, (eye.x + chest.x) / 2, (eye.y + chest.y) / 2, (eye.z + chest.z) / 2)) continue
     // 反应窗口仅在感知目标变化时重置，避免每 tick 反复推迟开火
     if (brain.perceivedId !== e.id) {
       brain.perceivedId = e.id
@@ -261,6 +294,8 @@ function assignObjectives(state: GameState, ctx: BotContext): void {
     brain.path = null
     brain.reactionUntil = 0
     brain.targetId = null
+    brain.smokedThisRound = false
+    brain.nextThrowTick = Math.round(3 * CONFIG.tickRate) // 开局 3s 后才允许投掷
   })
   ctBots.forEach((p, i) => {
     const brain = ctx.brains.get(p.id)!
@@ -273,6 +308,8 @@ function assignObjectives(state: GameState, ctx: BotContext): void {
     brain.path = null
     brain.reactionUntil = 0
     brain.targetId = null
+    brain.smokedThisRound = false
+    brain.nextThrowTick = Math.round(3 * CONFIG.tickRate)
   })
 }
 
@@ -295,6 +332,14 @@ function botEconomy(state: GameState, events: EventBus): void {
       }
     } else if (wantForce && p.money >= WEAPONS.awp.price) {
       buyItem(state, p, 'awp', events)
+    }
+    // 投掷物：T 买高爆+烟雾，CT 买烟雾+燃烧
+    if (p.team === 'T') {
+      if (!p.weapons.grenades[0] && p.money >= WEAPONS.he.price) buyItem(state, p, 'he', events)
+      if (!p.weapons.grenades[2] && p.money >= WEAPONS.smoke.price) buyItem(state, p, 'smoke', events)
+    } else {
+      if (!p.weapons.grenades[2] && p.money >= WEAPONS.smoke.price) buyItem(state, p, 'smoke', events)
+      if (!p.weapons.grenades[3] && p.money >= WEAPONS.molotov.price) buyItem(state, p, 'molotov', events)
     }
     p.activeSlot = p.weapons.primary ? 0 : 1
   }

@@ -74,11 +74,12 @@ export class GameRenderer {
 
   private targetMeshes: { id: number; group: THREE.Group; parts: THREE.Mesh[]; base: number[] }[] = []
   private dynBoxes: Map<string, { mesh: THREE.Mesh; w: number; h: number; d: number }> = new Map()
+  private dynSpheres: Map<string, { mesh: THREE.Mesh }> = new Map()
 
-  addDynamicBox(id: string, w: number, h: number, d: number, color: number): void {
+  addDynamicBox(id: string, w: number, h: number, d: number, color: number, opacity = 1): void {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshLambertMaterial({ color }),
+      new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity }),
     )
     this.scene.add(mesh)
     this.dynBoxes.set(id, { mesh, w, h, d })
@@ -90,6 +91,22 @@ export class GameRenderer {
     entry.mesh.visible = visible
     // y 为脚底
     entry.mesh.position.set(x, y + entry.h / 2, z)
+  }
+
+  addDynamicSphere(id: string, r: number, color: number, opacity = 1): void {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 12, 10),
+      new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity }),
+    )
+    this.scene.add(mesh)
+    this.dynSpheres.set(id, { mesh })
+  }
+
+  updateDynamicSphere(id: string, x: number, y: number, z: number, visible: boolean): void {
+    const entry = this.dynSpheres.get(id)
+    if (!entry) return
+    entry.mesh.visible = visible
+    entry.mesh.position.set(x, y, z)
   }
 
   addTargets(defs: TargetDef[]): void {

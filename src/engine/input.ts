@@ -108,6 +108,10 @@ export class InputController {
     if (e.code === 'Digit1' && !this.keys.has('Digit1')) this.switchSlot = 0
     if (e.code === 'Digit2' && !this.keys.has('Digit2')) this.switchSlot = 1
     if (e.code === 'Digit3' && !this.keys.has('Digit3')) this.switchSlot = 2
+    if (e.code === 'Digit4' && !this.keys.has('Digit4')) this.switchSlot = 3
+    if (e.code === 'Digit5' && !this.keys.has('Digit5')) this.switchSlot = 4
+    if (e.code === 'Digit6' && !this.keys.has('Digit6')) this.switchSlot = 5
+    if (e.code === 'Digit7' && !this.keys.has('Digit7')) this.switchSlot = 6
     this.keys.add(e.code)
   }
 

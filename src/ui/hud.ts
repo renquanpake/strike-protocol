@@ -41,9 +41,14 @@ export class HUD {
       if (w) {
         const def = WEAPONS[w.defId]
         const slots = ['主', '副', '刀']
-        this.weaponEl.textContent = def.category === 'knife'
-          ? `${slots[p.activeSlot]} ${def.name}`
-          : `${slots[p.activeSlot]} ${def.name}  ${w.ammoMag}/${w.ammoReserve}${w.reloadUntilTick > 0 ? ' · 换弹中…' : ''}`
+        if (p.activeSlot >= 3) {
+          const gLabels = ['HE', '闪光', '烟雾', '燃烧']
+          this.weaponEl.textContent = `投掷 ${gLabels[p.activeSlot - 3] ?? ''} ${def.name} ×${w.ammoMag}`
+        } else {
+          this.weaponEl.textContent = def.category === 'knife'
+            ? `${slots[p.activeSlot]} ${def.name}`
+            : `${slots[p.activeSlot]} ${def.name}  ${w.ammoMag}/${w.ammoReserve}${w.reloadUntilTick > 0 ? ' · 换弹中…' : ''}`
+        }
       }
     }
     if (this.roundEl) {

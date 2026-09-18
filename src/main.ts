@@ -7,6 +7,7 @@ import { updatePlayerMovement } from './game/systems/movement'
 import { updateWeaponSystem, fireWeapon } from './game/systems/weapon'
 import { updateTargets } from './game/systems/targets'
 import { updateRound } from './game/systems/round'
+import { updateGrenades } from './game/systems/grenade'
 import { createBotContext, updateBots, type BotContext } from './game/systems/bot'
 import { emptyInput } from './engine/input'
 import { TARGET_PART_LOCAL } from './game/entities/target'
@@ -69,6 +70,7 @@ const buyMenu = new BuyMenu(hudRoot, state, events)
 const scoreboard = new Scoreboard(hudRoot, state)
 const radar = new Radar(radarCanvas, prepped)
 const roundMsgEl = document.getElementById('roundmsg') as HTMLElement | null
+const blindEl = document.getElementById('blind') as HTMLElement | null
 const loop = new FixedLoop(CONFIG.tickRate)
 
 function stepLogic(dt: number): void {
@@ -82,6 +84,7 @@ function stepLogic(dt: number): void {
     fireWeapon(state, p, prepped, events)
   }
   updateTargets(state)
+  updateGrenades(state, prepped, events, dt)
   updateRound(state, prepped, events, dt)
   state.tick += 1
 }
@@ -94,6 +97,61 @@ function refreshDynamic(): void {
   const c4 = state.round.c4
   const c4Visible = c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted'
   renderer.updateDynamicBox('c4', c4.position.x, c4.position.y, c4.position.z, c4Visible)
+  refreshGrenades()
+}
+
+const GREN_COLORS: Record<string, number> = {
+  he: 0xd0342c,
+  flash: 0xffd257,
+  smoke: 0x8fa3ad,
+  molotov: 0xff7043,
+}
+const madeDyn = new Set<string>()
+
+function ensureDyn(key: string): void {
+  if (madeDyn.has(key)) return
+  madeDyn.add(key)
+  if (key.startsWith('g:')) {
+    const g = state.grenades.find((x) => `g:${x.id}` === key)
+    renderer.addDynamicSphere(key, 8, GREN_COLORS[g?.kind ?? 'he'] ?? 0x888888)
+  } else if (key.startsWith('sm:')) {
+    const z = state.smokes.find((x) => `sm:${x.id}` === key)
+    const r = z?.radius ?? 100
+    renderer.addDynamicBox(key, r * 2, 90, r * 2, 0x9fb4c4, 0.45)
+  } else {
+    const z = state.burns.find((x) => `fn:${x.id}` === key)
+    const r = z?.radius ?? 60
+    renderer.addDynamicBox(key, r * 2, 2, r * 2, 0xff7043, 0.8)
+  }
+}
+
+function refreshGrenades(): void {
+  const liveG = new Set(state.grenades.map((g) => `g:${g.id}`))
+  const liveSm = new Set(state.smokes.map((z) => `sm:${z.id}`))
+  const liveFn = new Set(state.burns.map((z) => `fn:${z.id}`))
+  for (const g of state.grenades) {
+    ensureDyn(`g:${g.id}`)
+    renderer.updateDynamicSphere(`g:${g.id}`, g.position.x, g.position.y + 8, g.position.z, true)
+  }
+  for (const z of state.smokes) {
+    ensureDyn(`sm:${z.id}`)
+    renderer.updateDynamicBox(`sm:${z.id}`, z.center.x, z.center.y, z.center.z, true)
+  }
+  for (const z of state.burns) {
+    ensureDyn(`fn:${z.id}`)
+    renderer.updateDynamicBox(`fn:${z.id}`, z.center.x, z.center.y, z.center.z, true)
+  }
+  // 隐藏已消失的
+  for (const key of madeDyn) {
+    const alive =
+      (key.startsWith('g:') && liveG.has(key)) ||
+      (key.startsWith('sm:') && liveSm.has(key)) ||
+      (key.startsWith('fn:') && liveFn.has(key))
+    if (!alive) {
+      if (key.startsWith('g:')) renderer.updateDynamicSphere(key, 0, -9999, 0, false)
+      else renderer.updateDynamicBox(key, 0, -9999, 0, false)
+    }
+  }
 }
 
 function refreshTargetDefs(): void {
@@ -159,6 +217,12 @@ function frame(now: number): void {
   }
 
   hud.update(state, fps, input.locked, now)
+  // 致盲白屏
+  if (blindEl) {
+    const p0 = state.players[0]
+    const remain = p0.blindUntil - state.tick
+    blindEl.style.opacity = remain > 0 ? String(Math.min(1, (remain / 256) * 1.2)) : '0'
+  }
   requestAnimationFrame(frame)
 }
 

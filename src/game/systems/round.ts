@@ -36,7 +36,6 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
     const sp = teamSpawn(state, level, p.team, p.id % 5)
     p.position = { x: sp.x, y: sp.y + 40, z: sp.z }
     p.velocity = { x: 0, y: 0, z: 0 }
-    // 朝向地图中心（z=0）
     p.yaw = sp.z > 0 ? 0 : Math.PI
     p.pitch = 0
     p.alive = true
@@ -45,8 +44,13 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
     p.onGround = false
     p.onLadder = false
     p.crouching = false
+    p.blindUntil = 0
     p.hasKit = p.team === 'CT' ? p.hasKit : false
   }
+  // 清场：投掷物与区域效果
+  state.grenades = []
+  state.smokes = []
+  state.burns = []
   resetEquipment(state)
   // C4 交给 T 侧存活随机一人（M3：本地玩家）
   r.c4.carrierId = 0

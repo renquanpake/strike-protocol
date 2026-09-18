@@ -10,6 +10,7 @@ export type GameEvent =
   | { type: 'bombPlanted'; site: 'A' | 'B' }
   | { type: 'bombDefused' }
   | { type: 'bombExploded' }
+  | { type: 'grenadeExploded'; kind: string; x: number; y: number; z: number }
 
 export class EventBus {
   private handlers: Record<string, Array<(e: GameEvent) => void>> = {}

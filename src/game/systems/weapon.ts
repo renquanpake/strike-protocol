@@ -9,6 +9,7 @@ import { raycastBoxes } from '../physics/raycast'
 import type { PreppedLevel } from '../physics/collision'
 import type { HitboxPart } from '../types'
 import { grantKillReward } from '../economy'
+import { throwGrenade } from './grenade'
 
 /** 当前激活武器 */
 export function activeWeapon(p: PlayerEntity): WeaponInstance | null {
@@ -17,8 +18,14 @@ export function activeWeapon(p: PlayerEntity): WeaponInstance | null {
       return p.weapons.primary
     case 1:
       return p.weapons.secondary
-    default:
+    case 2:
       return p.weapons.knife
+    default: {
+      // 3..6 = 投掷物槽（he/flash/smoke/molotov）
+      const i = p.activeSlot - 3
+      if (i >= 0 && i < p.weapons.grenades.length) return p.weapons.grenades[i]
+      return p.weapons.knife
+    }
   }
 }
 
@@ -70,7 +77,13 @@ export function updateWeaponSystem(state: GameState, p: PlayerEntity, events: Ev
   if (inp.switchSlot !== null) {
     const slot = inp.switchSlot
     const target: WeaponInstance | null =
-      slot === 0 ? p.weapons.primary : slot === 1 ? p.weapons.secondary : p.weapons.knife
+      slot === 0
+        ? p.weapons.primary
+        : slot === 1
+          ? p.weapons.secondary
+          : slot === 2
+            ? p.weapons.knife
+            : p.weapons.grenades[slot - 3] ?? null
     if (target && p.activeSlot !== slot) {
       p.activeSlot = slot
       target.burstCount = 0
@@ -113,6 +126,17 @@ export function fireWeapon(
     meleeStrike(state, p, def, eye, events)
     w.nextFireTick = state.tick + msToTicks(def.fireRateMs)
     events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id })
+    return
+  }
+
+  // 投掷物
+  if (def.category === 'grenade') {
+    if (w.ammoMag <= 0) return
+    w.ammoMag -= 1
+    w.nextFireTick = state.tick + msToTicks(def.fireRateMs)
+    const forward = viewForward(p.yaw, p.pitch)
+    const origin = v3(eye.x + forward.x * 30, eye.y + forward.y * 30, eye.z + forward.z * 30)
+    throwGrenade(state, p, def.id, origin, forward, events)
     return
   }
 

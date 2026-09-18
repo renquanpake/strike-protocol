@@ -9,6 +9,10 @@ const BUYABLE: { id: string; label: string }[] = [
   { id: 'm4', label: 'M4 步枪' },
   { id: 'awp', label: 'AWP 狙击枪' },
   { id: 'xm1014', label: 'XM-14 霰弹枪' },
+  { id: 'he', label: '高爆手雷' },
+  { id: 'flash', label: '闪光弹' },
+  { id: 'smoke', label: '烟雾弹' },
+  { id: 'molotov', label: '燃烧瓶' },
   { id: 'kit', label: '拆弹钳' },
 ]
 
@@ -64,10 +68,13 @@ export class BuyMenu {
 
   private refresh(): void {
     const p: PlayerEntity = this.state.players[0]
+    const greOrder = ['he', 'flash', 'smoke', 'molotov']
     for (const item of BUYABLE) {
       const row = this.rows.get(item.id)!
       const price = item.id === 'kit' ? GEAR_PRICES.kit : WEAPONS[item.id].price
-      const owned = item.id === 'kit' && p.hasKit
+      let owned = false
+      if (item.id === 'kit') owned = p.hasKit
+      else if (greOrder.includes(item.id)) owned = p.weapons.grenades[greOrder.indexOf(item.id)] !== null
       row.style.opacity = owned || p.money < price ? '0.4' : '1'
       row.style.pointerEvents = owned ? 'none' : 'auto'
     }

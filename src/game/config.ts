@@ -30,6 +30,22 @@ export const CONFIG = {
   // 梯子
   ladderClimbSpeed: 130, // u/s 上下攀爬速率
 
+  // 投掷物
+  grenadeThrowSpeed: 520, // u/s 出手初速
+  grenadeBounceFriction: 0.55, // 反弹速度保留
+  heFuseMs: 3000,
+  heRadius: 150,
+  flashFuseMs: 2800,
+  flashRadius: 150,
+  flashBlindMs: 4000,
+  smokeFuseMs: 2000, // 落地后延迟冒烟
+  smokeRadius: 100,
+  smokeLifeMs: 15000,
+  molotovFuseMs: 1500,
+  molotovRadius: 60,
+  molotovLifeMs: 8000,
+  molotovDps: 30,
+
   // 角色几何（CS 比例）
   playerHeight: 72,
   crouchHeight: 48,

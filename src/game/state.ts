@@ -24,6 +24,28 @@ export interface WeaponSlots {
   primary: WeaponInstance | null
   secondary: WeaponInstance | null
   knife: WeaponInstance
+  /** 4 格投掷物槽（he/flash/smoke/molotov，未购为 null） */
+  grenades: (WeaponInstance | null)[]
+}
+
+export type GrenadeKind = 'he' | 'flash' | 'smoke' | 'molotov'
+
+export interface GrenadeState {
+  id: number
+  kind: GrenadeKind
+  owner: number
+  position: Vec3
+  velocity: Vec3
+  /** 引爆/落地起算 */
+  fuseUntilTick: number
+  exploded: boolean
+}
+
+export interface ZoneState {
+  id: number
+  center: Vec3
+  radius: number
+  untilTick: number
 }
 
 export interface PlayerEntity {
@@ -49,6 +71,8 @@ export interface PlayerEntity {
   hasKit: boolean
   activeSlot: number
   weapons: WeaponSlots
+  /** 闪光致盲截止 tick */
+  blindUntil: number
   /** 本 tick 输入（Bot 为合成输入） */
   input: InputFrame
 }
@@ -83,6 +107,13 @@ export interface GameState {
   targets: Target[]
   round: RoundState
   rng: Rng
+  /** 在场投掷物 */
+  grenades: GrenadeState[]
+  /** 烟雾区 / 燃烧区 */
+  smokes: ZoneState[]
+  burns: ZoneState[]
+  nextGrenadeId: number
+  nextZoneId: number
 }
 
 export function makePlayer(
@@ -119,7 +150,9 @@ export function makePlayer(
       primary: null,
       secondary: newWeaponInstance('glock'),
       knife: newWeaponInstance('knife'),
+      grenades: [null, null, null, null],
     },
+    blindUntil: 0,
     input: emptyInput(),
   }
 }
@@ -166,6 +199,11 @@ export function createGameState(
       sidesSwapped: false,
     },
     rng: new RngCtor(rngSeed),
+    grenades: [],
+    smokes: [],
+    burns: [],
+    nextGrenadeId: 1,
+    nextZoneId: 1,
   }
 }
 

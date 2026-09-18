@@ -96,6 +96,14 @@
         border: 1px solid rgba(140, 200, 255, 0.3);
         border-radius: 3px;
       }
+      #blind {
+        position: absolute;
+        inset: 0;
+        background: #ffffff;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.1s linear;
+      }
       #round {
         position: absolute;
         left: 50%;
@@ -180,11 +188,12 @@
     <canvas id="game"></canvas>
     <div id="hud">
       <div id="crosshair"></div>
+      <div id="blind"></div>
       <div id="lock-hint">
-        <div class="title">STRIKE PROTOCOL — M4</div>
+        <div class="title">STRIKE PROTOCOL — M6</div>
         点击画面锁定鼠标开始<br />
         WASD 移动 / 空格 跳跃(按住连跳) / Shift 静走 / Ctrl 蹲<br />
-        鼠标左键 开火 / R 换弹 / 1 主 · 2 副 · 3 刀<br />
+        鼠标左键 开火 / R 换弹 / 1 主 · 2 副 · 3 刀 · 4-7 投掷物<br />
         B 买枪 / Tab 计分板 / E 安放·拆除 C4
       </div>
       <div id="round"></div>

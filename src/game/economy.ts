@@ -61,12 +61,23 @@ export function buyItem(state: GameState, p: PlayerEntity, itemId: string, event
   if (!def || def.price <= 0) return false
   if (p.money < def.price) return false
   p.money -= def.price
+  if (def.category === 'grenade') {
+    const idx = GRENADE_ORDER.indexOf(def.id as (typeof GRENADE_ORDER)[number])
+    if (idx < 0) return false
+    if (!p.weapons.grenades[idx]) {
+      p.weapons.grenades[idx] = newWeaponInstance(def.id)
+      p.activeSlot = idx + 3
+    }
+    return true
+  }
   const slot = slotFor(def.id)
   if (slot === 'primary') p.weapons.primary = newWeaponInstance(def.id)
   else p.weapons.secondary = newWeaponInstance(def.id)
   p.activeSlot = slot === 'primary' ? 0 : 1
   return true
 }
+
+const GRENADE_ORDER = ['he', 'flash', 'smoke', 'molotov']
 
 function slotFor(defId: string): 'primary' | 'secondary' {
   const cat = WEAPONS[defId].category
@@ -91,6 +102,7 @@ export function resetEquipment(state: GameState): void {
       p.weapons.primary = null
       p.weapons.secondary = newWeaponInstance('glock')
       p.weapons.knife = newWeaponInstance('knife')
+      p.weapons.grenades = [null, null, null, null]
       p.activeSlot = 1
     }
   }
