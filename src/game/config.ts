@@ -59,6 +59,8 @@ export const CONFIG = {
 
   // 战斗
   movingSpeedThreshold: 30, // u/s：超过即视为移动态散布
+  botHoldFireRange: 350, // Bot 不开火的最大距离（狙击枪除外）
+  botAimTauTicks: 192, // 瞄准收敛时间常数（tick，约 3s）
   hitboxMultipliers: {
     head: 4,
     chest: 1,

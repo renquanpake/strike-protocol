@@ -7,7 +7,6 @@ import { astar } from '../map/navmesh'
 import { raycastBoxes } from '../physics/raycast'
 import { buyItem } from '../economy'
 import { inSmoke, throwGrenade } from './grenade'
-import { viewForward } from './weapon'
 import { v3, type Vec3 } from '../../engine/math'
 import type { EventBus } from '../../engine/eventbus'
 import { emptyInput, type InputFrame } from '../../engine/input'
@@ -19,14 +18,18 @@ export interface BotBrain {
   replanAt: number
   targetId: number | null
   reactionUntil: number
-  aimErrYaw: number
-  aimErrPitch: number
   nextShotTick: number
   stuckTicks: number
   /** 最近一次感知到的敌人 id（用于反应窗口只在换目标时重置） */
   perceivedId: number | null
   nextThrowTick: number
   smokedThisRound: boolean
+  /** 到达目标点后的守点朝向（rad） */
+  idleYaw: number
+  /** 交战瞄准：锁定基础误差 + 跟踪时间（用于收敛） */
+  baseAimYaw: number
+  baseAimPitch: number
+  trackTicks: number
 }
 
 export interface BotContext {
@@ -49,13 +52,15 @@ export function createBotContext(
         replanAt: 0,
         targetId: null,
         reactionUntil: 0,
-        aimErrYaw: 0,
-        aimErrPitch: 0,
         nextShotTick: 0,
         stuckTicks: 0,
         perceivedId: null,
         nextThrowTick: 0,
         smokedThisRound: false,
+        idleYaw: 0,
+        baseAimYaw: 0,
+        baseAimPitch: 0,
+        trackTicks: 0,
       })
     }
   }
@@ -123,7 +128,6 @@ export function updateBots(
     let inp: InputFrame = emptyInput()
 
     if (engaging && enemy) {
-      brain.targetId = enemy.id
       brain.path = null
       const blinded = tick < p.blindUntil
       const eye = { x: p.position.x, y: p.position.y + CONFIG.eyeHeight, z: p.position.z }
@@ -132,12 +136,26 @@ export function updateBots(
       const dy = aimY - eye.y
       const dz = enemy.position.z - eye.z
       const dist = Math.max(1, Math.hypot(dx, dy, dz))
-      // 被致盲时瞄准误差放大
-      const sigma = (0.02 + 0.00012 * dist) * (blinded ? 6 : 1)
-      brain.aimErrYaw = gauss(rng) * sigma
-      brain.aimErrPitch = gauss(rng) * sigma * 0.6
-      const desiredYaw = Math.atan2(-dx, -dz) + brain.aimErrYaw
-      const desiredPitch = Math.asin(Math.max(-1, Math.min(1, dy / dist))) + brain.aimErrPitch
+
+      // 换目标时锁定基础误差；持续跟踪则误差按时间常数收敛（越瞄越准）
+      if (brain.targetId !== enemy.id) {
+        const sigma0 = 0.02 + 0.00012 * dist
+        brain.baseAimYaw = gauss(rng) * sigma0
+        brain.baseAimPitch = gauss(rng) * sigma0 * 0.6
+        brain.trackTicks = 0
+        brain.targetId = enemy.id
+      } else {
+        brain.trackTicks += 1
+      }
+      const errFactor = Math.exp(-brain.trackTicks / CONFIG.botAimTauTicks) * (blinded ? 6 : 1)
+      // 狙击手盯得稳：误差减半
+      const curW = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
+      const sniperAim = curW ? WEAPONS[curW.defId].category === 'sniper' : false
+      const aimErrYaw = brain.baseAimYaw * errFactor * (sniperAim ? 0.5 : 1)
+      const aimErrPitch = brain.baseAimPitch * errFactor * (sniperAim ? 0.5 : 1)
+
+      const desiredYaw = Math.atan2(-dx, -dz) + aimErrYaw
+      const desiredPitch = Math.asin(Math.max(-1, Math.min(1, dy / dist))) + aimErrPitch
       const turnCap = 3 * dt
       const dyaw = angleDiff(desiredYaw, p.yaw)
       p.yaw += Math.max(-turnCap, Math.min(turnCap, dyaw))
@@ -147,11 +165,11 @@ export function updateBots(
       const toRight = Math.floor(tick / 32) % 2 === 0
       if (toRight) inp.right = 1
       else inp.left = 1
-      // 开火（被致盲不开火）
-      if (!blinded) {
-        const w = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
-        const def = w ? WEAPONS[w.defId] : null
-        if (def && w && w.ammoMag > 0 && w.reloadUntilTick === 0) {
+      // 开火（被致盲不开火；非狙击枪超射程不开火）
+      if (!blinded && curW) {
+        const def = WEAPONS[curW.defId]
+        const inRange = def.category === 'sniper' || dist <= CONFIG.botHoldFireRange
+        if (def && curW.ammoMag > 0 && curW.reloadUntilTick === 0 && inRange) {
           if (def.auto) {
             inp.fireHeld = true
           } else if (tick >= brain.nextShotTick) {
@@ -161,7 +179,6 @@ export function updateBots(
         }
       }
       // 投掷物使用
-      const fwd = viewForward(p.yaw, p.pitch)
       const throwDir = v3(dx / dist, dy / dist, dz / dist)
       const he = p.weapons.grenades[0]
       if (p.team === 'T' && he && he.ammoMag > 0 && tick >= brain.nextThrowTick && dist < 400) {
@@ -180,7 +197,6 @@ export function updateBots(
         brain.smokedThisRound = true
         brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
       }
-      void fwd
     } else {
       brain.targetId = null
       if (brain.path === null || tick >= brain.replanAt) {
@@ -199,7 +215,12 @@ export function updateBots(
         }
       } else {
         brain.path = null
-        // 到达后：CT 持钳者靠近 C4 拆除
+        // 到达后：守点架枪（朝 idleYaw 转向）
+        const diw = angleDiff(brain.idleYaw, p.yaw)
+        const turnCap = 3 * dt
+        p.yaw += Math.max(-turnCap, Math.min(turnCap, diw))
+        p.pitch = 0
+        // CT 持钳者靠近 C4 拆除
         const c4 = state.round.c4
         if (c4.state === 'planted' && p.team === 'CT' && p.hasKit && dist2D(p.position, c4.position) <= 40) {
           inp.useHeld = true
@@ -291,6 +312,7 @@ function assignObjectives(state: GameState, ctx: BotContext): void {
     const brain = ctx.brains.get(p.id)!
     const target = i % 3 === 2 ? siteB : siteA
     brain.objective = v3(target.center.x, target.elevation, target.center.z)
+    brain.idleYaw = Math.PI // T 守点面朝 +Z（CT 回防方向）
     brain.path = null
     brain.reactionUntil = 0
     brain.targetId = null
@@ -301,9 +323,12 @@ function assignObjectives(state: GameState, ctx: BotContext): void {
     const brain = ctx.brains.get(p.id)!
     if (i === 4) {
       brain.objective = v3(0, 0, -100)
+      brain.idleYaw = Math.PI // 中路游 walker 面朝 +Z（T 来向）
     } else {
       const target = i < 2 ? siteA : siteB
       brain.objective = v3(target.center.x + (i % 2 === 0 ? -60 : 60), target.elevation, target.center.z)
+      // CT 守点：A 点朝 +X（左翼通道），B 点朝 -X（右翼通道）
+      brain.idleYaw = i < 2 ? -Math.PI / 2 : Math.PI / 2
     }
     brain.path = null
     brain.reactionUntil = 0

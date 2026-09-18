@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { v3 } from '../src/engine/math'
 import { emptyInput } from '../src/engine/input'
+import { Rng } from '../src/engine/rng'
 import { EventBus } from '../src/engine/eventbus'
 import { CONFIG } from '../src/game/config'
 import { createGameState, type GameState } from '../src/game/state'
@@ -114,5 +115,60 @@ describe('bot AI (M5)', () => {
     const s = state.round.score
     expect(Math.max(s.T, s.CT)).toBe(CONFIG.winRounds)
     expect(guard).toBeLessThan(cap)
+  })
+})
+
+describe('bot AI (M9 打磨)', () => {
+  it('守点 Bot 到位后转向守点朝向（架枪）', () => {
+    const { state, prepped, nav, events, ctx } = makeWorld()
+    ctx.processedRound = 1 // 跳过自动目标分配，使用手动设置
+    const bot = state.players[5] // CT
+    // 把 CT 直接放到 A 点，目标点设为当前所在（已到位）
+    const siteA = ctx.sites[0]
+    bot.position = v3(siteA.center.x - 60, siteA.elevation, siteA.center.z)
+    ctx.brains.get(bot.id)!.objective = v3(bot.position.x, bot.position.y, bot.position.z)
+    ctx.brains.get(bot.id)!.idleYaw = -Math.PI / 2 // 朝 +X（A 点 CT 守左翼通道）
+    bot.yaw = Math.PI // 初始背对守点方向
+    // 敌人停死角，避免进入交战分支
+    for (let i = 0; i < 10; i++) {
+      if (i === 5) continue
+      state.players[i].position = v3(330, 0, -585)
+    }
+    state.round.phase = 'live'
+    state.round.phaseEndTick = Infinity
+    // 只驱动 Bot + 移动，不推进回合（避免越界重置位置/yaw）
+    for (let i = 0; i < 600; i++) {
+      state.players[0].input = emptyInput()
+      updateBots(state, prepped, nav, ctx, events, DT)
+      for (const p of state.players) {
+        if (!p.alive) continue
+        updatePlayerMovement(state, p, prepped, DT)
+      }
+      state.tick += 1
+    }
+    // 与 -π/2 的偏差应在 0.5 rad 内（转向收敛；yaw 按 2π 归一化比较）
+    let d = Math.abs(bot.yaw - -Math.PI / 2)
+    d = Math.min(d, Math.PI * 2 - d)
+    expect(d).toBeLessThan(0.5)
+  })
+
+  it('完整对局双方互有斩获（有来有回）', () => {
+    const { state, prepped, nav, events, ctx } = makeWorld()
+    state.rng = new Rng(0x5eed) // 与主测试不同种子，验收“有来有回”
+    const killsByTeam: Record<'T' | 'CT', number> = { T: 0, CT: 0 }
+    events.on('playerKilled', (e) => {
+      const killer = state.players.find((x) => x.id === e.attackerId)
+      if (killer && e.victimId !== killer.id) killsByTeam[killer.team] += 1
+    })
+    let guard = 0
+    const cap = 160000
+    while (state.round.phase !== 'matchEnd' && guard < cap) {
+      sim(state, ctx, prepped, nav, events, 256)
+      guard += 256
+    }
+    expect(state.round.phase).toBe('matchEnd')
+    // 双方都至少击杀过 1 名对方：有来有回，不是一边倒
+    expect(killsByTeam.T).toBeGreaterThan(0)
+    expect(killsByTeam.CT).toBeGreaterThan(0)
   })
 })
