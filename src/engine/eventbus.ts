@@ -1,6 +1,14 @@
 /** 最小类型化事件总线：系统产出事件，UI/音频/Bot 消费 */
 export type GameEvent =
   | { type: 'shot'; shooterId: number; weaponId: string }
+  | {
+      type: 'surfaceHit'
+      shooterId: number
+      weaponId: string
+      point: { x: number; y: number; z: number }
+      normal: { x: number; y: number; z: number }
+      pellets: number
+    }
   | { type: 'hit'; victimId: number; part: string; damage: number; attackerId: number }
   | { type: 'targetKilled'; victimId: number; weaponId: string }
   | { type: 'playerKilled'; victimId: number; attackerId: number; weaponId: string }

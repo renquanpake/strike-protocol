@@ -171,6 +171,7 @@ export function fireWeapon(
   )
 
   const boxes = hitBoxes(state, level, p.id)
+  let wallHit: { point: Vec3; normal: Vec3 } | null = null
   for (let i = 0; i < def.pellets; i++) {
     const [ox, oy, oz] = state.rng.coneDirection(coneRad)
     const dir: Vec3 = normalize(
@@ -204,7 +205,20 @@ export function fireWeapon(
       const part = hit.part as HitboxPart
       const dmg = shotDamage(def, part, hit.t, victim.armor)
       applyPlayerHit(state, p, victim, dmg, def, events)
+    } else if (p.id === 0 && !wallHit) {
+      // 命中地图墙体（仅本地玩家，供印花投射）
+      wallHit = { point: hit.point, normal: hit.normal }
     }
+  }
+  if (wallHit) {
+    events.emit({
+      type: 'surfaceHit',
+      shooterId: p.id,
+      weaponId: def.id,
+      point: wallHit.point,
+      normal: wallHit.normal,
+      pellets: def.pellets,
+    })
   }
   events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id })
 }

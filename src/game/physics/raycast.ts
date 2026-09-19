@@ -7,6 +7,8 @@ export interface RayHit {
   /** 命中的实体标识（brush 索引 / 'target:<id>:<part>' / 'miss'） */
   target: string
   part?: string
+  /** 命中面法线（外法线，用于对齐印花投射） */
+  normal: Vec3
 }
 
 /**
@@ -25,6 +27,8 @@ export function raycastBoxes(
   for (const b of boxes) {
     let tmin = 0
     let tmax = Infinity
+    let face = 0 // 0=x 1=y 2=z
+    let faceSign = 1 // -1 朝 -axis, +1 朝 +axis
 
     if (Math.abs(dx) < 1e-9) {
       if (ox < b.min.x || ox > b.max.x) continue
@@ -32,7 +36,11 @@ export function raycastBoxes(
       let t1 = (b.min.x - ox) / dx
       let t2 = (b.max.x - ox) / dx
       if (t1 > t2) [t1, t2] = [t2, t1]
-      tmin = Math.max(tmin, t1)
+      if (t1 > tmin) {
+        tmin = t1
+        face = 0
+        faceSign = dx > 0 ? -1 : 1
+      }
       tmax = Math.min(tmax, t2)
     }
     if (Math.abs(dy) < 1e-9) {
@@ -41,7 +49,11 @@ export function raycastBoxes(
       let t1 = (b.min.y - oy) / dy
       let t2 = (b.max.y - oy) / dy
       if (t1 > t2) [t1, t2] = [t2, t1]
-      tmin = Math.max(tmin, t1)
+      if (t1 > tmin) {
+        tmin = t1
+        face = 1
+        faceSign = dy > 0 ? -1 : 1
+      }
       tmax = Math.min(tmax, t2)
     }
     if (Math.abs(dz) < 1e-9) {
@@ -50,19 +62,30 @@ export function raycastBoxes(
       let t1 = (b.min.z - oz) / dz
       let t2 = (b.max.z - oz) / dz
       if (t1 > t2) [t1, t2] = [t2, t1]
-      tmin = Math.max(tmin, t1)
+      if (t1 > tmin) {
+        tmin = t1
+        face = 2
+        faceSign = dz > 0 ? -1 : 1
+      }
       tmax = Math.min(tmax, t2)
     }
 
     if (tmax < tmin) continue
     const t = tmin > 0 ? tmin : tmax
     if (t < 0) continue
+    const normal: Vec3 =
+      face === 0
+        ? { x: faceSign, y: 0, z: 0 }
+        : face === 1
+          ? { x: 0, y: faceSign, z: 0 }
+          : { x: 0, y: 0, z: faceSign }
     if (!best || t < best.t) {
       best = {
         t,
         point: { x: ox + dx * t, y: oy + dy * t, z: oz + dz * t },
         target: b.id,
         part: b.part,
+        normal,
       }
     }
   }

@@ -148,3 +148,67 @@ export function buildTextures(): TextureMap {
     glass: glassTexture(),
   }
 }
+
+/** 图片纹理加载（/textures/*.png，加载失败回退到 canvas 程序化贴图） */
+function loadOrFallback(url: string, fallback: () => THREE.Texture): Promise<THREE.Texture> {
+  return new Promise((resolve) => {
+    new THREE.TextureLoader().load(
+      url,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+        tex.anisotropy = 4
+        resolve(tex)
+      },
+      undefined,
+      () => resolve(fallback()),
+    )
+  })
+}
+
+/** 异步把生图表面贴图覆盖进 map（保留 ladder/glass 的 canvas 版），并补枪身/阵营键 */
+export async function loadImageTextures(map: TextureMap): Promise<void> {
+  const entries = await Promise.all([
+    loadOrFallback('/textures/concrete.png', concreteTexture),
+    loadOrFallback('/textures/wood.png', woodTexture),
+    loadOrFallback('/textures/sand.png', sandTexture),
+    loadOrFallback('/textures/metal.png', metalTexture),
+    loadOrFallback('/textures/gun_metal.png', () => metalTexture()),
+    loadOrFallback('/textures/gun_wood.png', () => woodTexture()),
+    loadOrFallback('/textures/bot_ct.png', () => metalTexture()),
+    loadOrFallback('/textures/bot_t.png', () => sandTexture()),
+  ])
+  map.concrete = entries[0]
+  map.wood = entries[1]
+  map.sand = entries[2]
+  map.metal = entries[3]
+  map.gun_metal = entries[4]
+  map.gun_wood = entries[5]
+  map.bot_ct = entries[6]
+  map.bot_t = entries[7]
+}
+
+/** 印花贴图：白底生成图 → 运行时提取 alpha（越黑越不透明），用于投射弹孔/烧痕 */
+export async function makeDecalTexture(url: string): Promise<THREE.Texture> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image()
+    i.onload = () => resolve(i)
+    i.onerror = () => reject(new Error('decal load failed: ' + url))
+    i.src = url
+  })
+  const c = document.createElement('canvas')
+  c.width = c.height = img.width
+  const ctx = c.getContext('2d')!
+  ctx.drawImage(img, 0, 0)
+  const data = ctx.getImageData(0, 0, c.width, c.height)
+  const px = data.data
+  for (let i = 0; i < px.length; i += 4) {
+    // 亮度越低（越黑）→ 越不透明；白底 → 完全透明
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]
+    px[i + 3] = Math.max(0, 255 - lum)
+  }
+  ctx.putImageData(data, 0, 0)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}

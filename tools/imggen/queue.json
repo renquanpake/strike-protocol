@@ -1,0 +1,46 @@
+[
+  {
+    "file": "concrete",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: weathered medium-gray concrete wall panel, subtle cement gray #9a9a92, thin darker panel seams forming large squares, light surface wear, faint horizontal formwork lines, minor gray stains, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, neutral color, high detail 4k texture."
+  },
+  {
+    "file": "wood",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: worn light tan wooden floor planks, warm sandy beige #c2a06a, vertical plank boards with thin darker gaps, subtle wood grain, light scuffs and scratches, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "sand",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: dry sandy desert dirt ground, pale golden sand #cdb287 mixed with small pebbles and rocks, subtle cracks, worn outdoor terrain, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "metal",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular highlight, no shadows. Subject: brushed dark gunmetal steel surface, dark blue-gray #3a3f47, fine horizontal brush lines, subtle panel seams, light worn edges, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "gun_metal",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: dark matte gunmetal polymer and steel firearm surface, very dark charcoal #23262b, subtle worn edges, faint scratches, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "gun_wood",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: polished walnut wood grip and furniture, warm dark brown #4a2f1c, fine straight wood grain, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "bot_ct",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: counter-terrorist urban camouflage fabric pattern, cool blue-gray #5b7290 base with darker navy and light blue-gray camo blotches, subtle fabric weave, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "bot_t",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: terrorist desert urban camouflage fabric pattern, tan sand #b58a5a base with brown and khaki camo blotches, subtle fabric weave, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "decal_bullet",
+    "prompt": "Flat graphic on a pure solid white background, absolutely nothing else, no gradient, no vignette, no shading, no 3d, no perspective. Subject: a single small bullet impact hole, dark charcoal #202020 irregular round hole in the center with a few thin dark radial streaks and a faint crushed-material ring, small, centered, occupying about 20 percent of the frame. Strict constraints: pure white background #ffffff with zero texture, the mark is flat dark 2d, centered, no objects, no shadows on the background."
+  },
+  {
+    "file": "decal_scorch",
+    "prompt": "Flat graphic on a pure solid white background, absolutely nothing else, no gradient, no vignette, no shading, no 3d, no perspective. Subject: a large black radial scorch burn mark from an explosion, irregular dark charred blob #101010 in the center fading to a soft gray ring at the edges, centered, occupying about 50 percent of the frame. Strict constraints: pure white background #ffffff with zero texture, the mark is flat dark 2d, centered, no objects, no shadows on the background."
+  },
+  {
+    "file": "decal_shot",
+    "prompt": "Flat graphic on a pure solid white background, absolutely nothing else, no gradient, no vignette, no shading, no 3d, no perspective. Subject: a shotgun pellet impact cluster, many small dark charcoal #202020 round holes scattered in a dense irregular blob in the center, small, centered. Strict constraints: pure white background #ffffff with zero texture, the marks are flat dark 2d, centered, no objects, no shadows on the background."
+  }
+]

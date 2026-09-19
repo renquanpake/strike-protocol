@@ -15,7 +15,7 @@ import { FixedLoop } from './engine/loop'
 import { InputController } from './engine/input'
 import { EventBus } from './engine/eventbus'
 import { GameRenderer, type TargetDef } from './engine/renderer'
-import { buildTextures, type TextureMap } from './engine/textures'
+import { buildTextures, loadImageTextures, makeDecalTexture, type TextureMap } from './engine/textures'
 import { HUD } from './ui/hud'
 import { BuyMenu } from './ui/buymenu'
 import { Scoreboard } from './ui/scoreboard'
@@ -24,6 +24,7 @@ import { ViewModel } from './ui/viewmodel'
 import { AudioEngine } from './engine/audio'
 import { updateShells, spawnShell, type Shell } from './game/particles'
 import { viewForward, viewRight } from './game/systems/weapon'
+import { raycastBoxes } from './game/physics/raycast'
 import { v3 } from './engine/math'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
@@ -32,7 +33,7 @@ const radarCanvas = document.getElementById('radar') as HTMLCanvasElement
 
 const level = matchLevel()
 const prepped = prepareLevel(level)
-const textures: TextureMap = buildTextures()
+let textures: TextureMap = buildTextures()
 const nav = buildNavGrid(prepped, 48)
 
 const state: GameState = createGameState(level.spawns.T, level.spawns.CT, CONFIG.healthMax, CONFIG.startMoney)
@@ -55,17 +56,6 @@ const targetDefs: TargetDef[] = state.targets.map((t) => ({
 // 渲染
 const renderer = new GameRenderer(canvas, CONFIG.fov)
 renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar)
-for (const b of level.brushes) {
-  if (b.clip) continue
-  renderer.addBox(b.min, b.max, 0xffffff, b.material === 'glass' ? 0.45 : 1, b.material, textures)
-}
-renderer.addTargets(targetDefs)
-for (const p of state.players) {
-  if (p.id === 0) continue
-  const color = p.team === 'T' ? 0x4caf50 : 0x5c86c5
-  renderer.addDynamicBox(`bot:${p.id}`, 40, CONFIG.playerHeight, 40, color)
-}
-renderer.addDynamicBox('c4', 14, 8, 10, 0xd0342c)
 
 // 输入 / UI
 const input = new InputController()
@@ -98,8 +88,40 @@ const shells: Shell[] = Array.from({ length: SHELL_POOL }, (_, i) => ({
 for (let i = 0; i < SHELL_POOL; i++) renderer.addDynamicSphere(`shell:${i}`, 3, 0xd4af37)
 renderer.addDynamicSphere('muzzle', 6, 0xffd75e)
 
-// 第一人称武器模型
-const viewmodel = new ViewModel(renderer)
+// 第一人称武器模型（在 init() 里用加载好的图片贴图构造）
+let viewmodel: ViewModel
+
+// ===== 印花（弹孔/霰弹/烧痕），池在 init() 里创建 =====
+let bulletPool = -1
+let scorchPool = -1
+let shotPool = -1
+
+function surfaceBelow(x: number, y: number, z: number): import('./game/physics/raycast').RayHit | null {
+  const boxes = level.brushes
+    .filter((b) => !b.clip && b.material !== 'glass')
+    .map((b, i) => ({ id: String(i), min: b.min, max: b.max }))
+  return raycastBoxes(v3(x, y, z), v3(0, -1, 0), boxes) ?? raycastBoxes(v3(x, y, z), v3(0, 1, 0), boxes)
+}
+
+events.on('surfaceHit', (e) => {
+  if (e.shooterId !== 0) return
+  const pool = e.pellets > 1 ? shotPool : bulletPool
+  renderer.spawnDecal(pool, e.point, e.normal, e.pellets > 1 ? 2.4 : 1)
+})
+const spawnScorch = (x: number, y: number, z: number): void => {
+  const hit = surfaceBelow(x, y, z)
+  if (hit) renderer.spawnDecal(scorchPool, hit.point, hit.normal, 3)
+}
+events.on('grenadeExploded', (e) => spawnScorch(e.x, e.y, e.z))
+events.on('bombExploded', () => {
+  const c4 = state.round.c4
+  spawnScorch(c4.position.x, c4.position.y, c4.position.z)
+})
+events.on('roundEnd', () => {
+  renderer.clearDecals(bulletPool)
+  renderer.clearDecals(scorchPool)
+  renderer.clearDecals(shotPool)
+})
 
 // 枪口火光（本地玩家最近一次开火）
 let muzzleTicks = 0
@@ -184,7 +206,7 @@ function stepLogic(dt: number): void {
 function refreshDynamic(): void {
   for (const p of state.players) {
     if (p.id === 0) continue
-    renderer.updateDynamicBox(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.alive)
+    renderer.updateHumanoid(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.yaw, p.alive, false)
   }
   const c4 = state.round.c4
   const c4Visible = c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted'
@@ -363,18 +385,65 @@ function frame(now: number): void {
   requestAnimationFrame(frame)
 }
 
-requestAnimationFrame(frame)
-window.addEventListener('resize', () => renderer.resize())
+async function init(): Promise<void> {
+  // 先加载生图表面贴图（失败回退 canvas），再建世界
+  await loadImageTextures(textures)
+  viewmodel = new ViewModel(renderer, textures)
+  for (const b of level.brushes) {
+    if (b.clip) continue
+    renderer.addBox(b.min, b.max, 0xffffff, b.material === 'glass' ? 0.45 : 1, b.material, textures)
+  }
+  renderer.addTargets(targetDefs)
+  // 人形 bot（替换色块盒）
+  for (const p of state.players) {
+    if (p.id === 0) continue
+    const camo = p.team === 'T' ? textures.bot_t : textures.bot_ct
+    const accent = p.team === 'T' ? 0xc8862a : 0x3f6fae
+    renderer.addHumanoid(`bot:${p.id}`, camo, accent)
+  }
+  renderer.addDynamicBox('c4', 14, 8, 10, 0xd0342c)
+  // 印花池
+  const [bulletTex, scorchTex, shotTex] = await Promise.all([
+    makeDecalTexture('/textures/decal_bullet.png').catch(() => null),
+    makeDecalTexture('/textures/decal_scorch.png').catch(() => null),
+    makeDecalTexture('/textures/decal_shot.png').catch(() => null),
+  ])
+  if (bulletTex) bulletPool = renderer.addDecalPool(6, bulletTex, 48)
+  if (scorchTex) scorchPool = renderer.addDecalPool(26, scorchTex, 16)
+  if (shotTex) shotPool = renderer.addDecalPool(10, shotTex, 24)
+
+  requestAnimationFrame(frame)
+  window.addEventListener('resize', () => renderer.resize())
+}
+void init()
 
 interface DebugAPI {
   state(): GameState
   tickOnce(): void
   nav?: unknown
+  events?: unknown
+  renderer?: unknown
+  textures?: unknown
+  bulletPool?: number
+  scorchPool?: number
+  shotPool?: number
 }
 if (import.meta.env.DEV) {
   ;(window as unknown as { __game?: DebugAPI }).__game = {
     state: () => state,
     tickOnce: () => stepLogic(1 / CONFIG.tickRate),
     nav,
+    events,
+    renderer,
+    textures,
+    get bulletPool() {
+      return bulletPool
+    },
+    get scorchPool() {
+      return scorchPool
+    },
+    get shotPool() {
+      return shotPool
+    },
   }
 }
