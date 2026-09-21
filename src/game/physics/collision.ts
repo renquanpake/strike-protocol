@@ -20,6 +20,7 @@ export function prepareLevel(level: LevelDef): PreppedLevel {
   const ladders: Brush[] = []
   for (const b of level.brushes) {
     if (b.clip) continue
+    if (b.decor) continue // 纯视觉装饰：不参与碰撞/导航（仍参与渲染与弹道）
     if (b.ladder) ladders.push(b)
     else solids.push(b)
   }

@@ -396,8 +396,11 @@ async function init(): Promise<void> {
   viewmodel = new ViewModel(renderer, textures)
   // Blender 高模替换（按枪类逐个接入；失败保留程序化模型）
   void viewmodel.upgradeWithGLB('rifle', '/models/m4.glb', 38, -0.28)
-  // 开源人物模型（Quaternius CC0）：先加载模板，bot 生成即蒙皮；失败退回色块人形
-  await renderer.loadCharacterModel('/models/character.glb')
+  // 开源人物模型（three.js 官方 Soldier「Vanguard」CC 资产，含 Idle/Run/Walk；
+  // 失败回退 Quaternius character.glb，再失败退回色块人形）
+  if (!(await renderer.loadCharacterModel('/models/soldier.glb'))) {
+    await renderer.loadCharacterModel('/models/character.glb')
+  }
   for (const b of level.brushes) {
     if (b.clip) continue
     renderer.addBox(b.min, b.max, 0xffffff, b.material === 'glass' ? 0.45 : 1, b.material, textures)

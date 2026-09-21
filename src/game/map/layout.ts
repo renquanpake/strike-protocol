@@ -1,6 +1,16 @@
 import type { Vec3 } from '../../engine/math'
 
-export type BrushMaterial = 'concrete' | 'metal' | 'wood' | 'sand' | 'glass' | 'ladder'
+export type BrushMaterial =
+  | 'concrete'
+  | 'metal'
+  | 'wood'
+  | 'sand'
+  | 'glass'
+  | 'ladder'
+  | 'stone'
+  | 'roof'
+  | 'sandbag'
+  | 'rusted'
 
 export interface Brush {
   /** 脚底坐标系：min.y 为底面 */
@@ -11,6 +21,8 @@ export interface Brush {
   clip?: boolean
   /** 梯子：不作实心碰撞，可攀爬 */
   ladder?: boolean
+  /** 纯视觉装饰：参与渲染与弹道，不进碰撞/导航 */
+  decor?: boolean
 }
 
 export interface SiteDef {
@@ -37,12 +49,14 @@ const b = (
   material: BrushMaterial,
   clip = false,
   ladder = false,
+  decor = false,
 ): Brush => ({
   min: { x: cx - w / 2, y: cy, z: cz - d / 2 },
   max: { x: cx + w / 2, y: cy + h, z: cz + d / 2 },
   material,
   clip,
   ladder: ladder || undefined,
+  decor: decor || undefined,
 })
 
 /**

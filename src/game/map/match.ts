@@ -11,12 +11,14 @@ const b = (
   material: BrushMaterial = 'concrete',
   clip = false,
   ladder = false,
+  decor = false,
 ): Brush => ({
   min: { x: cx - w / 2, y: cy, z: cz - d / 2 },
   max: { x: cx + w / 2, y: cy + h, z: cz + d / 2 },
   material,
   clip,
   ladder: ladder || undefined,
+  decor: decor || undefined,
 })
 
 /**
@@ -32,20 +34,24 @@ export function matchLevel(): LevelDef {
   const push = (...bs: Brush[]): void => {
     brushes.push(...bs)
   }
-  // 便捷别名：木箱/金属块/混凝土结构
+  // 便捷别名：木箱/锈金属/砂岩结构（沙漠主题）+ 新材质
   const wood = (...bs: Brush[]): void => push(...bs.map((x) => ({ ...x, material: 'wood' as BrushMaterial })))
-  const metal = (...bs: Brush[]): void => push(...bs.map((x) => ({ ...x, material: 'metal' as BrushMaterial })))
-  const conc = (...bs: Brush[]): void => push(...bs.map((x) => ({ ...x, material: 'concrete' as BrushMaterial })))
+  const metal = (...bs: Brush[]): void => push(...bs.map((x) => ({ ...x, material: 'rusted' as BrushMaterial })))
+  const conc = (...bs: Brush[]): void => push(...bs.map((x) => ({ ...x, material: 'stone' as BrushMaterial })))
+  const sand = (...bs: Brush[]): void => push(...bs.map((x) => ({ ...x, material: 'sand' as BrushMaterial })))
+  // 纯视觉装饰（不参与碰撞/导航）：沙袋/旗帜/拱门等
+  const decor = (...bs: Brush[]): void =>
+    push(...bs.map((x) => ({ ...x, material: (x.material ?? 'concrete') as BrushMaterial, decor: true })))
 
-  // ===== 地板（4200×3600，pit 区挖洞，拆 4 块）=====
-  conc(
+  // ===== 地板（4200×3600，pit 区挖洞，拆 4 块）：沙漠沙地面 =====
+  sand(
     b(0, -32, 1030, 4200, 32, 1540), // 北带 z∈[260,1800]
     b(0, -32, -940, 4200, 32, 1720), // 南带 z∈[-1800,-80]
     b(-525, -32, 90, 3150, 32, 340), // 中带西 z∈[-80,260] x≤1050
     b(1725, -32, 90, 750, 32, 340), // 中带东 z∈[-80,260] x≥1350
   )
   // pit 坑底 + 北缘两级台阶（-32→-16→0）
-  conc(b(1200, -64, 90, 300, 32, 340))
+  sand(b(1200, -64, 90, 300, 32, 340))
   conc(b(1200, -64, 270, 300, 48, 40))
   conc(b(1200, -64, 290, 300, 64, 40))
 
@@ -283,6 +289,55 @@ export function matchLevel(): LevelDef {
     b(-812, 0, -1012, 624, 192, 24), // x∈[-1124,-500] z=-1000
   )
   // tunnel 南墙（x∈[-2100,-1500] 段已在西南填充；缺口即 tunnel 南口）
+
+  // ===== 纯视觉装饰（decor：不碰撞、不入导航，仅增强画面）=====
+  // 沙袋掩体（贴墙一排，沙漠主题）
+  decor(
+    // 中门东侧（mid 东墙外）沙袋排
+    b(96, 0, 400, 28, 48, 120, 'sandbag'),
+    b(96, 0, 540, 28, 48, 120, 'sandbag'),
+    // long 蓝箱旁沙袋
+    b(1360, 0, 40, 28, 48, 160, 'sandbag'),
+    // A 平台南缘沙袋（站在 48 台上）
+    b(1400, 48, 980, 28, 40, 200, 'sandbag'),
+    b(1700, 48, 980, 28, 40, 200, 'sandbag'),
+    // B 点沙袋
+    b(-1350, 0, 950, 28, 48, 160, 'sandbag'),
+    b(-1650, 0, 950, 28, 48, 160, 'sandbag'),
+    // upper tunnel 南口沙袋
+    b(-1325, 0, -960, 28, 48, 120, 'sandbag'),
+    // CT-B 走廊沙袋
+    b(-620, 0, 1330, 28, 48, 120, 'sandbag'),
+  )
+  // 旗帜/旗杆（出生区 + 爆点）
+  decor(
+    b(0, 0, -1400, 10, 160, 10, 'concrete'),
+    b(40, 96, -1400, 40, 32, 4, 'rusted'),
+    b(0, 0, 1600, 10, 160, 10, 'concrete'),
+    b(40, 96, 1600, 40, 32, 4, 'rusted'),
+    b(1475, 48, 1325, 10, 140, 10, 'concrete'), // A 旗
+    b(1475, 150, 1325, 40, 30, 4, 'rusted'),
+    b(-1550, 0, 1225, 10, 140, 10, 'concrete'), // B 旗
+    b(-1510, 120, 1225, 40, 30, 4, 'rusted'),
+  )
+  // 中门拱（双柱 + 横梁，压在门缝上方，视觉地标）
+  decor(
+    b(-130, 0, -60, 32, 192, 32, 'stone'), // 西柱
+    b(-130, 0, 120, 32, 192, 32, 'stone'),
+    b(-65, 192, 30, 130, 24, 200, 'stone'), // 横梁
+  )
+  // upper tunnel 入口拱
+  decor(
+    b(-1500, 0, -980, 32, 192, 32, 'stone'),
+    b(-1150, 0, -980, 32, 192, 32, 'stone'),
+  )
+  // 堆叠木箱装饰（纯视觉密度，贴墙）
+  decor(
+    b(760, 0, -1300, 40, 40, 40, 'wood'),
+    b(760, 40, -1300, 36, 24, 36, 'wood'),
+    b(-420, 0, -1650, 44, 44, 44, 'wood'),
+    b(820, 0, 1650, 44, 44, 44, 'wood'),
+  )
 
   const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z })
 

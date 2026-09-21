@@ -1,5 +1,21 @@
 [
   {
+    "file": "stone",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: weathered desert sandstone masonry wall, warm tan-gold stone #c9a878, rough cut block masonry with thin darker mortar joints in offset rows, sun-bleached patches, minor erosion pitting, dusty, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "roof",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: flat desert roof surface of packed dry earth and sand, muted ochre-brown #9c7f57, fine compacted dirt grain with sparse pebbles, subtle darker scuff streaks, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "sandbag",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: stacked sandbag wall, overlapping dusty burlap sandbags in warm khaki-tan #b09a6a, each bag a soft rounded cylinder shape in a running-bond stack, visible coarse burlap weave, dusty and dry, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "rusted",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular highlight, no shadows. Subject: weathered rusted metal shipping container wall, rusted orange-brown and faded olive #8a5a34, vertical corrugated panels, patches of flaky orange rust, faded paint, rivets, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
     "file": "concrete",
     "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: weathered medium-gray concrete wall panel, subtle cement gray #9a9a92, thin darker panel seams forming large squares, light surface wear, faint horizontal formwork lines, minor gray stains, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, neutral color, high detail 4k texture."
   },

@@ -438,9 +438,9 @@ export class GameRenderer {
           let dst: THREE.Material
           if (/eye/i.test(name)) {
             dst = m.clone() // 眼睛保留
-          } else if (/hair|brow/i.test(name)) {
+          } else if (/visor|helmet|head|hair|brow|face|skull/i.test(name)) {
             const c = m.clone() as THREE.MeshLambertMaterial
-            c.color.copy(headColor) // 头部/发：保留贴图，中性提亮
+            c.color.copy(headColor) // 头部/面罩/头盔：保留贴图，中性提亮
             c.emissive = new THREE.Color(0x000000)
             dst = c
           } else {
@@ -464,17 +464,23 @@ export class GameRenderer {
       const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
       mesh.material = list.map((m) => swapMap!.get(m) ?? m)
     })
-    // 动画：Idle_Loop / Jog_Fwd_Loop / Death01
+    // 动画：按候选名匹配（兼容不同模型命名：Idle/Run/Walk、Idle_Loop/Jog_Fwd_Loop/Death01 等）
     const mixer = new THREE.AnimationMixer(model)
-    const find = (name: string): THREE.AnimationClip | undefined => this.charClips.find((c) => c.name === name)
+    const pick = (...names: string[]): THREE.AnimationClip | undefined => {
+      for (const n of names) {
+        const c = this.charClips.find((x) => x.name === n)
+        if (c) return c
+      }
+      return undefined
+    }
     const mk = (clip: THREE.AnimationClip, loop: THREE.AnimationActionLoopStyles): THREE.AnimationAction => {
       const a = mixer.clipAction(clip)
       a.loop = loop
       return a
     }
-    const idleClip = find('Idle_Loop')
-    const moveClip = find('Jog_Fwd_Loop')
-    const deathClip = find('Death01')
+    const idleClip = pick('Idle_Loop', 'Idle', 'idle', 'Standing', 'stand')
+    const moveClip = pick('Jog_Fwd_Loop', 'Run', 'run', 'Walk', 'Walk_Loop', 'walk', 'Jog')
+    const deathClip = pick('Death01', 'Death', 'death', 'Dead', 'Hit_Chest')
     const idle = idleClip ? mk(idleClip, THREE.LoopRepeat) : undefined
     const move = moveClip ? mk(moveClip, THREE.LoopRepeat) : undefined
     const death = deathClip ? mk(deathClip, THREE.LoopOnce) : undefined

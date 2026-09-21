@@ -85,7 +85,7 @@ function applyTeam(root, team) {
         c.name = pbr.name || ''
         const name = c.name
         if (/eye/i.test(name)) { /* 保留 */ }
-        else if (/hair|brow/i.test(name)) {
+        else if (/visor|helmet|head|hair|brow|face|skull/i.test(name)) {
           c.color = new THREE.Color(t.head)
           c.emissive = new THREE.Color(0)
         } else {
@@ -103,7 +103,7 @@ function applyTeam(root, team) {
 const loader = new GLTFLoader()
 const meta = document.getElementById('meta')
 try {
-  const gltf = await loader.loadAsync('/models/character.glb')
+  const gltf = await loader.loadAsync('/models/soldier.glb')
   gltf.scene.traverse((o) => { if (o.name === 'Armature') o.quaternion.identity() })
   applyTeam(gltf.scene, 'T')
 
@@ -128,14 +128,17 @@ try {
   applyTeam(ct, 'CT')
 
   scene.add(gltf.scene, ct)
+  const pickClip = (...names) => gltf.animations.find((a) => names.includes(a.name))
+  const idleC = pickClip('Idle', 'Idle_Loop', 'idle')
+  const runC = pickClip('Run', 'Jog_Fwd_Loop', 'Walk')
   const mT = new THREE.AnimationMixer(gltf.scene)
-  mT.clipAction(gltf.animations.find((c) => c.name === 'Idle_Loop')).play()
+  if (idleC) mT.clipAction(idleC).play()
   const mC = new THREE.AnimationMixer(ct)
-  mC.clipAction(gltf.animations.find((c) => c.name === 'Jog_Fwd_Loop')).play()
+  if (runC) mC.clipAction(runC).play()
   const mDeath = new THREE.AnimationMixer(ct)
-  const deathClip = gltf.animations.find((c) => c.name === 'Death01')
+  const deathClip = pickClip('Death01', 'Death', 'dead')
 
-  meta.textContent = `scale=${scale.toFixed(1)} · ${gltf.animations.length} 动画 · 站立≈140u`
+  meta.textContent = `Vanguard 战士 · scale=${scale.toFixed(1)} · 站立≈140u · 动画 ${gltf.animations.map((a) => a.name).join('/')}`
 
   const cam = new THREE.PerspectiveCamera(55, 1.6, 1, 5000)
   function setView(name) {
@@ -162,7 +165,7 @@ try {
       setTimeout(() => {
         deathPlaying = false
         mDeath.stopAllAction()
-        mC.clipAction(gltf.animations.find((c) => c.name === 'Jog_Fwd_Loop')).reset().play()
+        if (runC) mC.clipAction(runC).reset().play()
       }, 3500)
     }
   }, 6000)
@@ -191,7 +194,7 @@ try {
   }
   requestAnimationFrame(tick)
 } catch (e) {
-  meta.textContent = '加载失败：' + String(e)
+  meta.textContent = '加载失败：' + String(e) + ' @ ' + (e.stack || '').split('\n')[1]
 }
 </script>
 </body>

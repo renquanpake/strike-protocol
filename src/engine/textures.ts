@@ -136,6 +136,72 @@ export function glassTexture(): THREE.Texture {
   return new THREE.CanvasTexture(c)
 }
 
+export function stoneTexture(): THREE.Texture {
+  const [c, ctx] = makeCanvas()
+  ctx.fillStyle = '#c9a878'
+  ctx.fillRect(0, 0, 256, 256)
+  // 错缝石砌
+  ctx.strokeStyle = 'rgba(80,60,35,0.5)'
+  ctx.lineWidth = 3
+  for (let r = 0; r < 4; r++) {
+    const y0 = r * 64
+    ctx.strokeRect(0, y0, 256, 64)
+    const off = r % 2 ? 64 : 0
+    for (let x = off; x < 256; x += 128) ctx.beginPath(), ctx.moveTo(x, y0), ctx.lineTo(x, y0 + 64), ctx.stroke()
+  }
+  noiseFill(ctx, 256, '#c9a878', 1500, 0.08)
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  return tex
+}
+
+export function roofTexture(): THREE.Texture {
+  const [c, ctx] = makeCanvas()
+  ctx.fillStyle = '#9c7f57'
+  ctx.fillRect(0, 0, 256, 256)
+  noiseFill(ctx, 256, '#9c7f57', 5000, 0.12)
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  return tex
+}
+
+export function sandbagTexture(): THREE.Texture {
+  const [c, ctx] = makeCanvas()
+  ctx.fillStyle = '#b09a6a'
+  ctx.fillRect(0, 0, 256, 256)
+  // 沙袋叠砌（running bond）
+  ctx.strokeStyle = 'rgba(90,72,40,0.55)'
+  ctx.lineWidth = 3
+  for (let r = 0; r < 5; r++) {
+    const y0 = r * 52
+    ctx.strokeRect(0, y0, 256, 52)
+    const off = r % 2 ? 64 : 0
+    for (let x = off; x < 256; x += 128) {
+      ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + 52); ctx.stroke()
+    }
+  }
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  return tex
+}
+
+export function rustedTexture(): THREE.Texture {
+  const [c, ctx] = makeCanvas()
+  ctx.fillStyle = '#8a5a34'
+  ctx.fillRect(0, 0, 256, 256)
+  // 竖向瓦楞
+  for (let x = 0; x < 256; x += 32) {
+    ctx.fillStyle = 'rgba(60,40,20,0.35)'
+    ctx.fillRect(x, 0, 4, 256)
+    ctx.fillStyle = 'rgba(180,140,90,0.25)'
+    ctx.fillRect(x + 14, 0, 6, 256)
+  }
+  noiseFill(ctx, 256, '#8a5a34', 3000, 0.15)
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  return tex
+}
+
 export type TextureMap = Record<string, THREE.Texture>
 
 export function buildTextures(): TextureMap {
@@ -146,6 +212,10 @@ export function buildTextures(): TextureMap {
     sand: sandTexture(),
     ladder: ladderTexture(),
     glass: glassTexture(),
+    stone: stoneTexture(),
+    roof: roofTexture(),
+    sandbag: sandbagTexture(),
+    rusted: rustedTexture(),
   }
 }
 
@@ -177,6 +247,10 @@ export async function loadImageTextures(map: TextureMap): Promise<void> {
     loadOrFallback('/textures/gun_wood.png', () => woodTexture()),
     loadOrFallback('/textures/bot_ct.png', () => metalTexture()),
     loadOrFallback('/textures/bot_t.png', () => sandTexture()),
+    loadOrFallback('/textures/stone.png', stoneTexture),
+    loadOrFallback('/textures/roof.png', roofTexture),
+    loadOrFallback('/textures/sandbag.png', sandbagTexture),
+    loadOrFallback('/textures/rusted.png', rustedTexture),
   ])
   map.concrete = entries[0]
   map.wood = entries[1]
@@ -186,6 +260,10 @@ export async function loadImageTextures(map: TextureMap): Promise<void> {
   map.gun_wood = entries[5]
   map.bot_ct = entries[6]
   map.bot_t = entries[7]
+  map.stone = entries[8]
+  map.roof = entries[9]
+  map.sandbag = entries[10]
+  map.rusted = entries[11]
 }
 
 /** 印花贴图：白底生成图 → 运行时提取 alpha（越黑越不透明），用于投射弹孔/烧痕 */

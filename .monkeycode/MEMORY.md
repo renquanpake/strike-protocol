@@ -25,3 +25,23 @@
   - 用户已指定技术路线（如"开源找人物模型"）后直接照做，不反复死磕单点细节。
   - 遇到卡点时先切到其他任务推进，最后统一彻底完成卡点项。
   - 收尾方式固定为：检修 + 截图验收（多角度实际渲染画面自查），不靠代码推断代替视觉验收。
+
+### [环境限制: 沙箱 swiftshader 无法渲染 skinned mesh]
+- Date: 2026-09-21
+- Context: 多轮验证（极简场景/游戏 dev/prod/自然 rAF/关 culling/手工 skinned 全失败，绘制调用恒为 0、context 反复 lost）
+- Category: 排障 & 调试
+- Instructions:
+  - 本沙箱用 puppeteer + swiftshader（`--use-gl=swiftshader`）截图时，three.js 的 SkinnedMesh 永远不产生绘制调用（`renderer.info.render` 三角形数恒为 0、skinned program 从不创建、`skeleton.boneTexture` 恒为 NULL）。这是渲染后端限制，**不是代码 bug**。
+  - 因此人物（蒙皮）的视觉验收**必须让用户在真实浏览器（真实 GPU）打开** `public/char_preview.html` 或游戏主页确认，不要在沙箱截图里找"人物消失"。
+  - 地图（非 skinned 的普通 box mesh）在 swiftshader 下渲染正常，可正常截图验收。
+  - 排障时切勿对 skinned mesh 调无参 `skeleton.init()` 或无 bindMatrix 的 `bind()`（会清空 bones/boneInverses/bindMatrix 彻底破坏蒙皮）；context 恢复只需 `skeleton.boneTexture.needsUpdate = true`。
+
+### [资产管线: 人物/贴图/压缩工具位置]
+- Date: 2026-09-21
+- Context: 引入 three.js Soldier.glb（Vanguard 战士）并压缩、生成沙漠贴图
+- Category: 构建方法
+- Instructions:
+  - 当前人物模型：`public/models/soldier.glb`（three.js 官方 Soldier "Vanguard"，CC 资产，压缩后 1.06MB，动画 Idle/Run/Walk，骨骼归一化后站立≈140u）；回退链 `character.glb`（Quaternius CC0）→色块人形。
+  - 无缝贴图生成：`cd /workspace && node tools/imggen/gen.mjs [file...]`（读 `tools/imggen/queue.json`，调 agnes 生图 API，写 `public/textures/{file}.png`，`--force` 重生成）；新贴图需在 `src/engine/textures.ts` 的 `buildTextures` + `loadImageTextures` 登记键。
+  - GLB 压缩管线：`/tmp/opencode/gltftrim/`（gltf-transform v4 + sharp + meshoptimizer），模板 `trim_soldier.mjs`、检查 `inspect.mjs`。v4 注意：`io.writeBinary(doc)` 返回 Uint8Array（自己写盘）；禁用 meshopt/quantize（会删 Skin）。
+  - 方法论已沉淀为项目 skill：`.opencode/skills/character-asset-pipeline/SKILL.md`、`.opencode/skills/map-build-craft/SKILL.md`。
