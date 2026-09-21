@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人物模型验收 · STRIKE PROTOCOL</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #8fb8d8; overflow: hidden }
+  .wrap { display: flex; flex-direction: column; height: 100% }
+  canvas { flex: 1; display: block; margin: 0 auto; max-width: 100%; background: #8fb8d8 }
+  .bar {
+    font: 13px/1.6 monospace; color: #1c2733; background: rgba(255,255,255,.85);
+    padding: 10px 14px; text-align: center;
+  }
+  .bar b { color: #c8862a }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    人物模型验收（开源 CC0 人物 · 阵营 mannequin 配色 · Idle/Jog/Death 动画）。
+    <b>T 橙</b>（idle）对照 <b style="color:#3f6fae">CT 蓝</b>（jog）。点击按钮切视角。
+    <br>
+    <button id="front" style="margin:4px 6px 0">正面</button>
+    <button id="side" style="margin:4px 6px 0">侧面</button>
+    <button id="top" style="margin:4px 6px 0">俯视</button>
+    <span id="meta" style="opacity:.7"></span>
+  </div>
+  <canvas id="c"></canvas>
+</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js'
+
+const canvas = document.getElementById('c')
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x8fb8d8)
+scene.fog = new THREE.Fog(0x8fb8d8, 600, 1600)
+scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x7a705c, 0.9))
+const sun = new THREE.DirectionalLight(0xfff1cf, 1.5)
+sun.position.set(300, 500, 200)
+sun.castShadow = true
+sun.shadow.mapSize.set(2048, 2048)
+const sc = sun.shadow.camera
+sc.left = sc.bottom = -500; sc.right = sc.top = 500; sc.near = 10; sc.far = 1600
+scene.add(sun)
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(4000, 4000),
+  new THREE.MeshLambertMaterial({ color: 0xb8a878 }),
+)
+ground.rotation.x = -Math.PI / 2
+ground.receiveShadow = true
+scene.add(ground)
+
+// 阵营配色（与游戏 renderer 一致）：身体纯色 mannequin、头部中性提亮、眼睛保留
+const TEAM = {
+  T: { body: 0xff9440, head: 0xd8d0c4, glow: 0xff7a1a },
+  CT: { body: 0x5f8ff0, head: 0xd8d0c4, glow: 0x2f5fd8 },
+}
+function applyTeam(root, team) {
+  const t = TEAM[team]
+  const cache = new Map()
+  root.traverse((o) => {
+    if (!o.isMesh) return
+    o.castShadow = true
+    o.receiveShadow = true
+    o.frustumCulled = false
+    const list = Array.isArray(o.material) ? o.material : [o.material]
+    o.material = list.map((pbr) => {
+      if (!cache.has(pbr)) {
+        const c = new THREE.MeshLambertMaterial({ map: pbr.map ?? undefined })
+        c.name = pbr.name || ''
+        const name = c.name
+        if (/eye/i.test(name)) { /* 保留 */ }
+        else if (/hair|brow/i.test(name)) {
+          c.color = new THREE.Color(t.head)
+          c.emissive = new THREE.Color(0)
+        } else {
+          c.map = null
+          c.color = new THREE.Color(t.body)
+          c.emissive = new THREE.Color(t.glow).multiplyScalar(0.2)
+        }
+        cache.set(pbr, c)
+      }
+      return cache.get(pbr)
+    })
+  })
+}
+
+const loader = new GLTFLoader()
+const meta = document.getElementById('meta')
+try {
+  const gltf = await loader.loadAsync('/models/character.glb')
+  gltf.scene.traverse((o) => { if (o.name === 'Armature') o.quaternion.identity() })
+  applyTeam(gltf.scene, 'T')
+
+  // 骨骼归一化：按骨骼极端点实测站立高度 → 140u（与游戏玩家等高）
+  gltf.scene.updateWorldMatrix(true, true)
+  let miny = Infinity, maxy = -Infinity
+  gltf.scene.traverse((o) => {
+    if (o.isBone) {
+      const y = o.matrixWorld.elements[13]
+      if (y < miny) miny = y
+      if (y > maxy) maxy = y
+    }
+  })
+  const scale = 140 / Math.max(maxy - miny, 1e-4)
+  gltf.scene.scale.setScalar(scale)
+  gltf.scene.position.y = -miny * scale
+  gltf.scene.rotation.y = Math.PI / 6
+
+  const ct = skeletonClone(gltf.scene)
+  ct.position.x = 110
+  ct.rotation.y = -Math.PI / 4
+  applyTeam(ct, 'CT')
+
+  scene.add(gltf.scene, ct)
+  const mT = new THREE.AnimationMixer(gltf.scene)
+  mT.clipAction(gltf.animations.find((c) => c.name === 'Idle_Loop')).play()
+  const mC = new THREE.AnimationMixer(ct)
+  mC.clipAction(gltf.animations.find((c) => c.name === 'Jog_Fwd_Loop')).play()
+  const mDeath = new THREE.AnimationMixer(ct)
+  const deathClip = gltf.animations.find((c) => c.name === 'Death01')
+
+  meta.textContent = `scale=${scale.toFixed(1)} · ${gltf.animations.length} 动画 · 站立≈140u`
+
+  const cam = new THREE.PerspectiveCamera(55, 1.6, 1, 5000)
+  function setView(name) {
+    if (name === 'front') { cam.position.set(0, 80, 260); cam.up.set(0, 1, 0); cam.lookAt(0, 70, 0) }
+    if (name === 'side') { cam.position.set(320, 80, 0); cam.up.set(0, 1, 0); cam.lookAt(0, 70, 0) }
+    if (name === 'top') { cam.position.set(0, 450, 0.01); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0) }
+  }
+  setView('front')
+
+  let deathPlaying = false
+  document.getElementById('front').onclick = () => { setView('front'); if (deathPlaying) return; }
+  document.getElementById('side').onclick = () => setView('side')
+  document.getElementById('top').onclick = () => setView('top')
+
+  // 每 6s 让 CT 演示一次 death 动画再回来
+  setInterval(() => {
+    if (deathClip && !deathPlaying) {
+      deathPlaying = true
+      const a = mDeath.clipAction(deathClip)
+      a.setLoop(THREE.LoopOnce, 1)
+      a.clampWhenFinished = true
+      a.reset().play()
+      mC.stopAllAction()
+      setTimeout(() => {
+        deathPlaying = false
+        mDeath.stopAllAction()
+        mC.clipAction(gltf.animations.find((c) => c.name === 'Jog_Fwd_Loop')).reset().play()
+      }, 3500)
+    }
+  }, 6000)
+
+  function fit() {
+    const w = Math.min(window.innerWidth, 900)
+    const h = Math.max(400, window.innerHeight - 90)
+    canvas.width = w * Math.min(window.devicePixelRatio, 2)
+    canvas.height = h * Math.min(window.devicePixelRatio, 2)
+    canvas.style.width = w + 'px'
+    canvas.style.height = h + 'px'
+    renderer.setSize(canvas.width, canvas.height, false)
+    cam.aspect = w / h
+    cam.updateProjectionMatrix()
+  }
+  fit()
+  window.addEventListener('resize', fit)
+
+  let last = 0
+  function tick(now) {
+    const dt = Math.min(0.05, (now - last) / 1000)
+    last = now
+    mT.update(dt); mC.update(dt); mDeath.update(dt)
+    renderer.render(scene, cam)
+    requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+} catch (e) {
+  meta.textContent = '加载失败：' + String(e)
+}
+</script>
+</body>
+</html>

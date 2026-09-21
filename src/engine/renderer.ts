@@ -27,10 +27,10 @@ export interface TargetDef {
 
 const TARGET_PART_COLORS = [0xc0392b, 0xa93226, 0xa93226, 0x7b241c, 0x641e16]
 
-/** 人物阵营配色：基础贴图是暗色变体，染色需提亮 + emissive 兜底保证远距可读（键 = 阵营 accent） */
-const CHAR_TINTS: Record<number, { tint: number; glow: number }> = {
-  0xc8862a: { tint: 0xffb37a, glow: 0xff8c3a },
-  0x3f6fae: { tint: 0x9fb8ff, glow: 0x5a86e8 },
+/** 人物阵营配色：身体纯色 mannequin（去贴图保证远距阵营可读），头部保留贴图做中性提亮（键 = 阵营 accent） */
+const CHAR_TINTS: Record<number, { body: number; head: number; glow: number }> = {
+  0xc8862a: { body: 0xff9440, head: 0xd8d0c4, glow: 0xff7a1a },
+  0x3f6fae: { body: 0x5f8ff0, head: 0xd8d0c4, glow: 0x2f5fd8 },
 }
 
 export class GameRenderer {
@@ -45,6 +45,21 @@ export class GameRenderer {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.scene = new THREE.Scene()
     this.camera = new THREE.PerspectiveCamera(fov, 1, 0.5, 12000)
+    // WebGL context 恢复后，three.js 自动重建程序/渲染器但不重传 skinned mesh 的
+    // boneTexture（DataTexture），会导致蒙皮人物消失。切 tab / GPU 重置同样触发，
+    // 故在 restored 时强制重传所有骨骼纹理。
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault()
+    })
+    canvas.addEventListener('webglcontextrestored', () => {
+      this.scene.traverse((o) => {
+        const m = o as THREE.SkinnedMesh
+        if (!m.isSkinnedMesh || !m.skeleton) return
+        // context 恢复后仅需重传骨骼纹理。切勿调用无参 skeleton.init() 或无 bindMatrix 的
+        // bind()——会清空 bones/boneInverses/bindMatrix，彻底破坏蒙皮渲染。
+        if (m.skeleton.boneTexture) m.skeleton.boneTexture.needsUpdate = true
+      })
+    })
     this.resize()
   }
 
@@ -55,7 +70,7 @@ export class GameRenderer {
     const sun = new THREE.DirectionalLight(0xfff1cf, 1.6)
     sun.position.set(800, 1200, 500)
     sun.castShadow = true
-    sun.shadow.mapSize.set(4096, 4096)
+    sun.shadow.mapSize.set(2048, 2048)
     const sc = sun.shadow.camera
     sc.left = -shadowExtent
     sc.right = shadowExtent
@@ -118,7 +133,7 @@ export class GameRenderer {
       deathDone: boolean
     }
   > = new Map()
-  private charMats: Map<number, THREE.Material[]> = new Map()
+  private charMats: Map<number, Map<THREE.Material, THREE.Material>> = new Map()
 
   /** 加载人物 GLB 模板，按玩家身高 140u 归一化；失败返回 false（bot 退回色块人形） */
   async loadCharacterModel(url: string): Promise<boolean> {
@@ -147,11 +162,22 @@ export class GameRenderer {
       })
       this.charTemplate = gltf.scene
       this.charClips = gltf.animations
-      const box = new THREE.Box3().setFromObject(gltf.scene)
-      const h = Math.max(box.max.y - box.min.y, 1e-4)
+      // 归一化基准：skinned mesh 的 geometry bbox 是 bind pose（T 张开臂）范围，不可靠；
+      // 改用骨骼世界坐标极端点实测站立高度（140u 与游戏玩家等高）
+      gltf.scene.updateWorldMatrix(true, true)
+      let miny = Infinity
+      let maxy = -Infinity
+      gltf.scene.traverse((o) => {
+        const bone = o as THREE.Bone
+        if (!bone.isBone) return
+        const y = bone.matrixWorld.elements[13]
+        if (y < miny) miny = y
+        if (y > maxy) maxy = y
+      })
+      const h = Math.max(maxy - miny, 1e-4)
       this.charScale = 140 / h
-      this.charTemplate.scale.setScalar(this.charScale)
-      this.charTemplate.position.y = -box.min.y * this.charScale
+      gltf.scene.scale.setScalar(this.charScale)
+      gltf.scene.position.y = -miny * this.charScale
       if (import.meta.env.DEV) {
         console.log(`[char] ${url} h=${h.toFixed(3)} scale=${this.charScale.toFixed(2)} anims=${this.charClips.length}`)
       }
@@ -387,15 +413,19 @@ export class GameRenderer {
     this.humanoids.set(id, { group, torsoMat: torso.material as THREE.MeshLambertMaterial })
   }
 
-  /** 蒙皮人物实例：克隆模板 + 阵营染色 + idle/jog/death 动画状态 */
+  /** 蒙皮人物实例：克隆模板 + 阵营纯色身体 + 头部中性提亮 + idle/jog/death 动画状态 */
   private addSkinnedHumanoid(id: string, accent: number): void {
     const template = this.charTemplate!
     const model = skeletonClone(template) as THREE.Group
-    // 阵营染色：基础贴图是暗色变体，用高亮阵营色 + emissive 兜底保证远距可读；材质按 accent 缓存克隆
+    // 材质按 accent 缓存：身体纯色 mannequin（去贴图）、头部/发保留贴图中性提亮、眼睛保留
     const tintDef = CHAR_TINTS[accent] ?? CHAR_TINTS[0xc8862a]
-    let mats = this.charMats.get(accent)
-    if (!mats) {
-      mats = []
+    let swapMap = this.charMats.get(accent)
+    if (!swapMap) {
+      swapMap = new Map()
+      const swapRef = swapMap
+      const bodyColor = new THREE.Color(tintDef.body)
+      const headColor = new THREE.Color(tintDef.head)
+      const glowColor = new THREE.Color(tintDef.glow)
       const seen = new Set<THREE.Material>()
       model.traverse((o) => {
         const mesh = o as THREE.Mesh
@@ -404,18 +434,27 @@ export class GameRenderer {
         for (const m of list) {
           if (seen.has(m)) continue
           seen.add(m)
-          const src = m as THREE.MeshLambertMaterial
-          const c = src.clone()
-          const isEye = /eye/i.test(src.name || '')
-          c.color = isEye ? new THREE.Color(0xffffff) : new THREE.Color(tintDef.tint).multiplyScalar(1.5)
-          c.emissive = isEye ? new THREE.Color(0x000000) : new THREE.Color(tintDef.glow).multiplyScalar(0.45)
-          mats!.push(c)
+          const name = m.name || ''
+          let dst: THREE.Material
+          if (/eye/i.test(name)) {
+            dst = m.clone() // 眼睛保留
+          } else if (/hair|brow/i.test(name)) {
+            const c = m.clone() as THREE.MeshLambertMaterial
+            c.color.copy(headColor) // 头部/发：保留贴图，中性提亮
+            c.emissive = new THREE.Color(0x000000)
+            dst = c
+          } else {
+            const c = m.clone() as THREE.MeshLambertMaterial
+            c.map = null // 身体：纯色 mannequin（去暗贴图），阵营色直接可见
+            c.color.copy(bodyColor)
+            c.emissive = glowColor.clone().multiplyScalar(0.18) // 阴影区兜底
+            dst = c
+          }
+          swapRef.set(m, dst)
         }
       })
-      this.charMats.set(accent, mats)
+      this.charMats.set(accent, swapRef)
     }
-    let mi = 0
-    const swap = new Map<THREE.Material, THREE.Material>()
     model.traverse((o) => {
       const mesh = o as THREE.Mesh
       if (!mesh.isMesh) return
@@ -423,15 +462,7 @@ export class GameRenderer {
       mesh.receiveShadow = true
       mesh.frustumCulled = false
       const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-      mesh.material = list.map((m) => {
-        let s = swap.get(m)
-        if (!s) {
-          s = mats![mi % mats!.length]
-          mi++
-          swap.set(m, s)
-        }
-        return s
-      })
+      mesh.material = list.map((m) => swapMap!.get(m) ?? m)
     })
     // 动画：Idle_Loop / Jog_Fwd_Loop / Death01
     const mixer = new THREE.AnimationMixer(model)
