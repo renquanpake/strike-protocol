@@ -34,7 +34,7 @@ const radarCanvas = document.getElementById('radar') as HTMLCanvasElement
 const level = matchLevel()
 const prepped = prepareLevel(level)
 let textures: TextureMap = buildTextures()
-const nav = buildNavGrid(prepped, 48)
+const nav = buildNavGrid(prepped, 24)
 
 const state: GameState = createGameState(level.spawns.T, level.spawns.CT, CONFIG.healthMax, CONFIG.startMoney)
 const events = new EventBus()
@@ -55,7 +55,7 @@ const targetDefs: TargetDef[] = state.targets.map((t) => ({
 
 // 渲染
 const renderer = new GameRenderer(canvas, CONFIG.fov)
-renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar)
+renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600)
 
 // 输入 / UI
 const input = new InputController()
@@ -206,7 +206,8 @@ function stepLogic(dt: number): void {
 function refreshDynamic(): void {
   for (const p of state.players) {
     if (p.id === 0) continue
-    renderer.updateHumanoid(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.yaw, p.alive, false)
+    const moving = Math.hypot(p.velocity.x, p.velocity.z) > 20
+    renderer.updateHumanoid(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.yaw, p.alive, false, moving)
   }
   const c4 = state.round.c4
   const c4Visible = c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted'
@@ -279,8 +280,11 @@ function refreshTargetDefs(): void {
 let fps = 60
 let fpsFrames = 0
 let fpsWindowStart = 0
+let lastFrameNow = 0
 
 function frame(now: number): void {
+  const frameDt = lastFrameNow > 0 ? Math.min(0.1, (now - lastFrameNow) / 1000) : 1 / 60
+  lastFrameNow = now
   const p = state.players[0]
   const prevX = p.position.x
   const prevY = p.position.y
@@ -330,6 +334,7 @@ function frame(now: number): void {
   } else {
     viewmodel.hide()
   }
+  renderer.updateCharacters(frameDt)
   renderer.render()
 
   // M7：音频监听者 + 弹壳/火光 + 命中反馈
@@ -389,6 +394,10 @@ async function init(): Promise<void> {
   // 先加载生图表面贴图（失败回退 canvas），再建世界
   await loadImageTextures(textures)
   viewmodel = new ViewModel(renderer, textures)
+  // Blender 高模替换（按枪类逐个接入；失败保留程序化模型）
+  void viewmodel.upgradeWithGLB('rifle', '/models/m4.glb', 38, -0.28)
+  // 开源人物模型（Quaternius CC0）：先加载模板，bot 生成即蒙皮；失败退回色块人形
+  await renderer.loadCharacterModel('/models/character.glb')
   for (const b of level.brushes) {
     if (b.clip) continue
     renderer.addBox(b.min, b.max, 0xffffff, b.material === 'glass' ? 0.45 : 1, b.material, textures)

@@ -62,9 +62,9 @@ describe('bot AI (M5)', () => {
     ctx.processedRound = 1 // 跳过自动分配，手动指派
     const bot = state.players[1]
     const siteA = ctx.sites[0]
-    // CT bots 停驻死角（后墙背后 606u 外，超出感知 480）
+    // CT bots 停驻死角（CT spawn 内，远离 T bot 感知范围）
     for (let i = 5; i < 10; i++) {
-      state.players[i].position = v3(330, 0, -585)
+      state.players[i].position = v3(400, 0, 1500)
       state.players[i].yaw = Math.PI
     }
     ctx.brains.get(bot.id)!.objective = v3(siteA.center.x, siteA.elevation, siteA.center.z)
@@ -78,15 +78,15 @@ describe('bot AI (M5)', () => {
     const { state, prepped, nav, events, ctx } = makeWorld()
     const bot = state.players[1]
     const enemy = state.players[5]
-    // 其余 Bot 停驻死角，只留 bot 与 enemy 对峙（开阔广场，LOS 清晰）
+    // 其余 Bot 停驻死角，只留 bot 与 enemy 对峙（long 走廊，LOS 清晰）
     for (let i = 0; i < 10; i++) {
       if (i === 1 || i === 5) continue
-      state.players[i].position = v3(330, 0, -585)
+      state.players[i].position = v3(400, 0, 1500)
     }
-    // 面对面 200u（x 轴）
-    bot.position = v3(-100, 0, -400)
+    // 面对面 200u（x 轴，long 走廊内）
+    bot.position = v3(1100, 0, -300)
     bot.yaw = -Math.PI / 2 // 朝 +X
-    enemy.position = v3(100, 0, -400)
+    enemy.position = v3(1300, 0, -300)
     enemy.yaw = Math.PI / 2 // 朝 -X
     bot.money = 4000
     bot.weapons.primary = null
@@ -123,16 +123,16 @@ describe('bot AI (M9 打磨)', () => {
     const { state, prepped, nav, events, ctx } = makeWorld()
     ctx.processedRound = 1 // 跳过自动目标分配，使用手动设置
     const bot = state.players[5] // CT
-    // 把 CT 直接放到 A 点，目标点设为当前所在（已到位）
+    // 把 CT 直接放到 A 平台西端，目标点设为当前所在（已到位）
     const siteA = ctx.sites[0]
-    bot.position = v3(siteA.center.x - 60, siteA.elevation, siteA.center.z)
+    bot.position = v3(siteA.center.x - 325, siteA.elevation, siteA.center.z)
     ctx.brains.get(bot.id)!.objective = v3(bot.position.x, bot.position.y, bot.position.z)
-    ctx.brains.get(bot.id)!.idleYaw = -Math.PI / 2 // 朝 +X（A 点 CT 守左翼通道）
+    ctx.brains.get(bot.id)!.idleYaw = -Math.PI / 2 // 朝 +X（面向 A 点纵深）
     bot.yaw = Math.PI // 初始背对守点方向
     // 敌人停死角，避免进入交战分支
     for (let i = 0; i < 10; i++) {
       if (i === 5) continue
-      state.players[i].position = v3(330, 0, -585)
+      state.players[i].position = v3(400, 0, 1500)
     }
     state.round.phase = 'live'
     state.round.phaseEndTick = Infinity

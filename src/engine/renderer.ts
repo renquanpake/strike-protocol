@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import type { Vec3 } from './math'
 import type { TextureMap } from './textures'
 
@@ -25,6 +27,12 @@ export interface TargetDef {
 
 const TARGET_PART_COLORS = [0xc0392b, 0xa93226, 0xa93226, 0x7b241c, 0x641e16]
 
+/** 人物阵营配色：基础贴图是暗色变体，染色需提亮 + emissive 兜底保证远距可读（键 = 阵营 accent） */
+const CHAR_TINTS: Record<number, { tint: number; glow: number }> = {
+  0xc8862a: { tint: 0xffb37a, glow: 0xff8c3a },
+  0x3f6fae: { tint: 0x9fb8ff, glow: 0x5a86e8 },
+}
+
 export class GameRenderer {
   private renderer: THREE.WebGLRenderer
   private scene: THREE.Scene
@@ -40,21 +48,21 @@ export class GameRenderer {
     this.resize()
   }
 
-  configure(sky: number, fogNear: number, fogFar: number): void {
+  configure(sky: number, fogNear: number, fogFar: number, shadowExtent = 900): void {
     this.scene.background = new THREE.Color(sky)
     this.scene.fog = new THREE.Fog(sky, fogNear, fogFar)
     const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x7a705c, 0.85)
     const sun = new THREE.DirectionalLight(0xfff1cf, 1.6)
     sun.position.set(800, 1200, 500)
     sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.mapSize.set(4096, 4096)
     const sc = sun.shadow.camera
-    sc.left = -900
-    sc.right = 900
-    sc.top = 900
-    sc.bottom = -900
+    sc.left = -shadowExtent
+    sc.right = shadowExtent
+    sc.top = shadowExtent
+    sc.bottom = -shadowExtent
     sc.near = 100
-    sc.far = 4000
+    sc.far = 6000
     sun.shadow.bias = -0.0004
     this.scene.add(hemi, sun)
   }
@@ -75,7 +83,8 @@ export class GameRenderer {
       const t = tex.clone()
       t.needsUpdate = true
       t.wrapS = t.wrapT = THREE.RepeatWrapping
-      t.repeat.set(Math.max(1, Math.round(w / 96)), Math.max(1, Math.round(h / 96)))
+      // 水平取较大跨度（南北向长墙的 z 跨度也算），垂直取高
+      t.repeat.set(Math.max(1, Math.round(Math.max(w, d) / 96)), Math.max(1, Math.round(h / 96)))
       mat.map = t
       mat.color.setHex(0xffffff) // 贴图自带颜色
     }
@@ -93,6 +102,71 @@ export class GameRenderer {
   private vmGroups: Map<string, THREE.Group> = new Map()
   private humanoids: Map<string, { group: THREE.Group; torsoMat: THREE.MeshLambertMaterial }> = new Map()
   private decals: { pool: THREE.Mesh[]; free: number[]; size: number; texture: THREE.Texture }[] = []
+
+  // ===== 开源人物模型（Quaternius CC0）：模板 + 每实例动画状态 =====
+  private charTemplate: THREE.Object3D | null = null
+  private charClips: THREE.AnimationClip[] = []
+  private charScale = 1
+  private charAnims: Map<
+    string,
+    {
+      mixer: THREE.AnimationMixer
+      idle?: THREE.AnimationAction
+      move?: THREE.AnimationAction
+      death?: THREE.AnimationAction
+      current: 'idle' | 'move' | 'death'
+      deathDone: boolean
+    }
+  > = new Map()
+  private charMats: Map<number, THREE.Material[]> = new Map()
+
+  /** 加载人物 GLB 模板，按玩家身高 140u 归一化；失败返回 false（bot 退回色块人形） */
+  async loadCharacterModel(url: string): Promise<boolean> {
+    try {
+      const gltf = await new GLTFLoader().loadAsync(url)
+      // 作者残留：Armature 根带约 15° X 轴旋转，归零保持站立姿态笔直
+      gltf.scene.traverse((o) => {
+        if (o.name === 'Armature') o.quaternion.identity()
+      })
+      // 材质统一转 Lambert（与游戏光照体系一致）：PBR Standard 在无环境贴图场景发黑
+      const matSwap = new Map<THREE.Material, THREE.MeshLambertMaterial>()
+      gltf.scene.traverse((o) => {
+        const mesh = o as THREE.Mesh
+        if (!mesh.isMesh) return
+        const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        mesh.material = list.map((m) => {
+          let l = matSwap.get(m)
+          if (!l) {
+            const pbr = m as THREE.MeshStandardMaterial
+            l = new THREE.MeshLambertMaterial({ map: pbr.map ?? undefined })
+            l.name = pbr.name || ''
+            matSwap.set(m, l)
+          }
+          return l
+        })
+      })
+      this.charTemplate = gltf.scene
+      this.charClips = gltf.animations
+      const box = new THREE.Box3().setFromObject(gltf.scene)
+      const h = Math.max(box.max.y - box.min.y, 1e-4)
+      this.charScale = 140 / h
+      this.charTemplate.scale.setScalar(this.charScale)
+      this.charTemplate.position.y = -box.min.y * this.charScale
+      if (import.meta.env.DEV) {
+        console.log(`[char] ${url} h=${h.toFixed(3)} scale=${this.charScale.toFixed(2)} anims=${this.charClips.length}`)
+      }
+      return true
+    } catch (e) {
+      console.warn('[char] 加载失败，bot 退回色块人形', e)
+      this.charTemplate = null
+      return false
+    }
+  }
+
+  /** 逐帧驱动所有人物动画混合器 */
+  updateCharacters(dt: number): void {
+    for (const a of this.charAnims.values()) a.mixer.update(dt)
+  }
 
   addDynamicBox(id: string, w: number, h: number, d: number, color: number, opacity = 1): void {
     const mesh = new THREE.Mesh(
@@ -170,6 +244,62 @@ export class GameRenderer {
     g.rotation.set(0, rotY, 0)
   }
 
+  /**
+   * 加载 GLB 武器模型并归一化：居中、缩放到目标长度（游戏单位）。
+   * 朝向：Blender -Y 前向经 glTF 导出为 +Z，viewmodel 组自带 yaw+PI 旋转，
+   * 恰好把 +Z 转回世界前向，wrap 无需再转。
+   * zShift：沿枪轴平移比例（负值前移），使握把落在组原点、枪托贴近相机、枪管远伸（CS 式布局）。
+   * 场景无环境贴图，金属度会让 PBR 材质发黑——加载时压低金属度并提亮反照率（共享材质只处理一次）。
+   */
+  async loadViewModelGLB(url: string, targetLen: number, zShift = 0.12): Promise<THREE.Object3D> {
+    const gltf = await new GLTFLoader().loadAsync(url)
+    const root = gltf.scene
+    const box = new THREE.Box3().setFromObject(root)
+    const size = box.getSize(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
+    root.position.sub(center)
+    root.position.z -= zShift * size.z
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const m of mats) {
+        const std = m as THREE.MeshStandardMaterial
+        // 共享材质只处理一次（sRGB 转换不可叠加）
+        if (!('metalness' in std) || std.userData.vmLifted) continue
+        std.userData.vmLifted = true
+        // 无环境贴图的场景里金属度材质会发黑：归零金属度，暗反照率按亮度归一（上限 4 倍，保留材质对比）
+        std.metalness = 0
+        std.roughness = Math.max(std.roughness ?? 0.5, 0.55)
+        if (std.color) {
+          const c = std.color
+          const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+          if (lum < 0.45) c.multiplyScalar(Math.min(4, 0.45 / Math.max(lum, 0.02)))
+          c.convertLinearToSRGB()
+        }
+      }
+    })
+    const wrap = new THREE.Group()
+    wrap.add(root)
+    wrap.scale.setScalar(targetLen / Math.max(size.x, size.y, size.z, 1e-4))
+    if (import.meta.env.DEV) {
+      console.log(`[glb] ${url} size=(${size.x.toFixed(3)},${size.y.toFixed(3)},${size.z.toFixed(3)}) scale=${wrap.scale.x.toFixed(2)}`)
+    }
+    return wrap
+  }
+
+  /** 将加载好的模型挂进 viewmodel 组（替换程序化部件；手臂等独立组不受影响） */
+  setViewmodelModel(id: string, model: THREE.Object3D): void {
+    const g = this.vmGroups.get(id)
+    if (!g) return
+    g.clear()
+    model.traverse((o) => {
+      o.castShadow = false
+      ;(o as THREE.Mesh).receiveShadow = false
+    })
+    g.add(model)
+  }
+
   /** 注册一个 decal 池（同纹理多实例，投射到表面） */
   addDecalPool(size: number, texture: THREE.Texture, count: number): number {
     const pool: THREE.Mesh[] = []
@@ -221,8 +351,12 @@ export class GameRenderer {
     d.free.push(instanceIdx)
   }
 
-  /** 人形 bot：头/躯干/双臂/双腿 + 阵营材质，整体随位置与 yaw 更新 */
+  /** 人形 bot：优先蒙皮人物模型，模板缺失时退回色块盒人形 */
   addHumanoid(id: string, camo: THREE.Texture, accent: number): void {
+    if (this.charTemplate && this.charClips.length > 0) {
+      this.addSkinnedHumanoid(id, accent)
+      return
+    }
     const group = new THREE.Group()
     const camoMat = new THREE.MeshLambertMaterial({ map: camo })
     const skinMat = new THREE.MeshLambertMaterial({ color: 0x8a6b52 })
@@ -253,9 +387,119 @@ export class GameRenderer {
     this.humanoids.set(id, { group, torsoMat: torso.material as THREE.MeshLambertMaterial })
   }
 
-  updateHumanoid(id: string, x: number, y: number, z: number, yaw: number, alive: boolean, flash: boolean): void {
+  /** 蒙皮人物实例：克隆模板 + 阵营染色 + idle/jog/death 动画状态 */
+  private addSkinnedHumanoid(id: string, accent: number): void {
+    const template = this.charTemplate!
+    const model = skeletonClone(template) as THREE.Group
+    // 阵营染色：基础贴图是暗色变体，用高亮阵营色 + emissive 兜底保证远距可读；材质按 accent 缓存克隆
+    const tintDef = CHAR_TINTS[accent] ?? CHAR_TINTS[0xc8862a]
+    let mats = this.charMats.get(accent)
+    if (!mats) {
+      mats = []
+      const seen = new Set<THREE.Material>()
+      model.traverse((o) => {
+        const mesh = o as THREE.Mesh
+        if (!mesh.isMesh) return
+        const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const m of list) {
+          if (seen.has(m)) continue
+          seen.add(m)
+          const src = m as THREE.MeshLambertMaterial
+          const c = src.clone()
+          const isEye = /eye/i.test(src.name || '')
+          c.color = isEye ? new THREE.Color(0xffffff) : new THREE.Color(tintDef.tint).multiplyScalar(1.5)
+          c.emissive = isEye ? new THREE.Color(0x000000) : new THREE.Color(tintDef.glow).multiplyScalar(0.45)
+          mats!.push(c)
+        }
+      })
+      this.charMats.set(accent, mats)
+    }
+    let mi = 0
+    const swap = new Map<THREE.Material, THREE.Material>()
+    model.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      mesh.frustumCulled = false
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      mesh.material = list.map((m) => {
+        let s = swap.get(m)
+        if (!s) {
+          s = mats![mi % mats!.length]
+          mi++
+          swap.set(m, s)
+        }
+        return s
+      })
+    })
+    // 动画：Idle_Loop / Jog_Fwd_Loop / Death01
+    const mixer = new THREE.AnimationMixer(model)
+    const find = (name: string): THREE.AnimationClip | undefined => this.charClips.find((c) => c.name === name)
+    const mk = (clip: THREE.AnimationClip, loop: THREE.AnimationActionLoopStyles): THREE.AnimationAction => {
+      const a = mixer.clipAction(clip)
+      a.loop = loop
+      return a
+    }
+    const idleClip = find('Idle_Loop')
+    const moveClip = find('Jog_Fwd_Loop')
+    const deathClip = find('Death01')
+    const idle = idleClip ? mk(idleClip, THREE.LoopRepeat) : undefined
+    const move = moveClip ? mk(moveClip, THREE.LoopRepeat) : undefined
+    const death = deathClip ? mk(deathClip, THREE.LoopOnce) : undefined
+    if (death) death.clampWhenFinished = true
+    const entry = { mixer, idle, move, death, current: 'idle' as const, deathDone: false }
+    if (death) {
+      mixer.addEventListener('finished', () => {
+        entry.deathDone = true
+        model.visible = false
+      })
+    }
+    this.charAnims.set(id, entry)
+    if (idle) idle.play()
+    this.scene.add(model)
+    this.humanoids.set(id, { group: model, torsoMat: null as unknown as THREE.MeshLambertMaterial })
+  }
+
+  updateHumanoid(id: string, x: number, y: number, z: number, yaw: number, alive: boolean, flash: boolean, moving = false): void {
     const h = this.humanoids.get(id)
     if (!h) return
+    const anim = this.charAnims.get(id)
+    if (anim) {
+      if (!alive) {
+        if (!anim.deathDone && anim.death) {
+          if (anim.current !== 'death') {
+            anim.current = 'death'
+            anim.death.reset()
+            anim.death.play()
+            anim.idle?.stop()
+            anim.move?.stop()
+          }
+        } else {
+          h.group.visible = false
+        }
+        return
+      }
+      // 复活/新回合：回 idle
+      if (anim.current === 'death') {
+        anim.deathDone = false
+        anim.death?.stop()
+        anim.current = 'idle'
+        anim.idle?.reset().play()
+      }
+      h.group.visible = true
+      h.group.position.set(x, y, z)
+      h.group.rotation.y = yaw + Math.PI
+      const want: 'idle' | 'move' = moving && anim.move ? 'move' : 'idle'
+      if (want !== anim.current) {
+        const from = want === 'move' ? anim.idle : anim.move
+        const to = want === 'move' ? anim.move : anim.idle
+        from?.fadeOut(0.18)
+        to?.reset().fadeIn(0.18).play()
+        anim.current = want
+      }
+      return
+    }
     h.group.visible = alive
     if (!alive) return
     h.group.position.set(x, y, z)

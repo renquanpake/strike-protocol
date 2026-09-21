@@ -91,6 +91,6 @@ export const CONFIG = {
 
   // 渲染
   skyColor: 0x8fb8d8,
-  fogNear: 800,
-  fogFar: 3600,
+  fogNear: 1400,
+  fogFar: 6000,
 } as const

@@ -45,17 +45,17 @@ describe('grenades (M6)', () => {
   })
 
   it('高爆手雷距离越远伤害越低（区域衰减）', () => {
-    const near = makeTarget(0, 0, 0, -40)
-    const far = makeTarget(1, 0, 0, -140)
+    const near = makeTarget(0, 300, 0, -1650)
+    const far = makeTarget(1, 300, 0, -1750)
     const w1 = makeWorld()
     w1.state.targets = [near]
-    throwGrenade(w1.state, { id: 0 }, 'he', v3(0, 60, -30), v3(0, -1, 0), w1.events)
+    throwGrenade(w1.state, { id: 0 }, 'he', v3(300, 60, -1640), v3(0, -1, 0), w1.events)
     sim(w1.state, w1.prepped, w1.events, Math.round((CONFIG.heFuseMs / 1000) * CONFIG.tickRate) + 10)
     const nearDmg = near.maxHealth - near.health
 
     const w2 = makeWorld()
     w2.state.targets = [far]
-    throwGrenade(w2.state, { id: 0 }, 'he', v3(0, 60, -30), v3(0, -1, 0), w2.events)
+    throwGrenade(w2.state, { id: 0 }, 'he', v3(300, 60, -1640), v3(0, -1, 0), w2.events)
     sim(w2.state, w2.prepped, w2.events, Math.round((CONFIG.heFuseMs / 1000) * CONFIG.tickRate) + 10)
     const farDmg = far.maxHealth - far.health
     expect(nearDmg).toBeGreaterThan(farDmg)
@@ -94,9 +94,9 @@ describe('grenades (M6)', () => {
 
   it('燃烧瓶生成燃烧区并持续掉血', () => {
     const { state, prepped, events } = makeWorld()
-    const t = makeTarget(0, 0, 0, 0)
+    const t = makeTarget(0, 300, 0, -1650)
     state.targets = [t]
-    throwGrenade(state, { id: 0 }, 'molotov', v3(0, 100, 0), v3(0, -1, 0), events)
+    throwGrenade(state, { id: 0 }, 'molotov', v3(300, 100, -1650), v3(0, -1, 0), events)
     sim(state, prepped, events, Math.round((CONFIG.molotovFuseMs / 1000) * CONFIG.tickRate) + 10)
     expect(state.burns.length).toBe(1)
     const hpAfter = t.health

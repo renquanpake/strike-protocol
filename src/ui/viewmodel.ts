@@ -47,6 +47,7 @@ export class ViewModel {
 
     // 各枪类部件组（注册进渲染器，按 id 驱动）
     this.buildRifle(metal, wood, steel)
+    this.buildRifle(metal, wood, steel, 'vm_lmg') // 轻机枪：独立组，避免与步枪 GLB 替换冲突
     this.buildSmi(metal, wood)
     this.buildSniper(metal, wood, steel)
     this.buildShotgun(metal, wood)
@@ -61,12 +62,13 @@ export class ViewModel {
     const g = this.renderer.addViewmodelGroup('vm_arms')
     const cloth = new THREE.MeshLambertMaterial({ color: 0x2c3138 })
     void wood
-    // 右前臂（握扳机）：从屏幕右下伸向握把
-    this.part(g, new THREE.BoxGeometry(4, 4, 12), cloth, 3, -4, 22, -0.5, 0, 0.15)
-    this.part(g, new THREE.BoxGeometry(3.5, 3.5, 4), cloth, 1.5, -3, 15) // 右手
+    // 约定：右手在组局部 z≈0（握把处），前臂向后（朝相机）延伸；组锚点由 update() 按 armAnchorZ 定位
+    // 右前臂（握扳机）：从握把伸向右下
+    this.part(g, new THREE.BoxGeometry(4, 4, 12), cloth, 4.5, -5, -6, -0.5, 0, 0.15)
+    this.part(g, new THREE.BoxGeometry(3.5, 3.5, 4), cloth, 1.8, -3, 0) // 右手
     // 左前臂（托护木）
-    this.part(g, new THREE.BoxGeometry(4, 4, 10), cloth, -4, -3, 20, -0.4, 0, -0.15)
-    this.part(g, new THREE.BoxGeometry(3.5, 3.5, 4), cloth, -2, -2, 12) // 左手
+    this.part(g, new THREE.BoxGeometry(4, 4, 10), cloth, -4.5, -3.5, 7, -0.4, 0, -0.15)
+    this.part(g, new THREE.BoxGeometry(3.5, 3.5, 4), cloth, -3, 0.5, 15) // 左手
     return g
   }
 
@@ -84,8 +86,8 @@ export class ViewModel {
     return g
   }
 
-  private buildRifle(metal: () => THREE.Material, wood: () => THREE.Material, steel: () => THREE.Material): THREE.Group {
-    const g = this.renderer.addViewmodelGroup('vm_rifle')
+  private buildRifle(metal: () => THREE.Material, wood: () => THREE.Material, steel: () => THREE.Material, id = 'vm_rifle'): THREE.Group {
+    const g = this.renderer.addViewmodelGroup(id)
     this.part(g, new THREE.BoxGeometry(5, 5, 14), metal(), 0, 0, 11) // 机匣
     this.part(g, this.cyl(1.4, 14), steel(), 0, 0.5, -3) // 枪管
     this.part(g, this.cyl(1.8, 2.5), steel(), 0, 0.5, -10) // 消焰器
@@ -158,6 +160,18 @@ export class ViewModel {
     this.kick = ticks
   }
 
+  /** 用 GLB 高模替换某枪类的程序化部件（失败返回 false，保留程序化模型） */
+  async upgradeWithGLB(cat: WeaponCategory, url: string, targetLen: number, zShift = -0.22): Promise<boolean> {
+    try {
+      const model = await this.renderer.loadViewModelGLB(url, targetLen, zShift)
+      this.renderer.setViewmodelModel(`vm_${cat}`, model)
+      this.glbCats.add(cat)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   getMuzzle(): Vec3 {
     return this.muzzle
   }
@@ -166,8 +180,30 @@ export class ViewModel {
     return `vm_${cat}`
   }
 
+  private glbCats = new Set<string>()
+
+  /** 各枪类握把在组局部 z 的位置（手臂锚点跟随；GLB 枪握把在原点附近） */
+  private armAnchorZ(cat: WeaponCategory): number {
+    if (this.glbCats.has(cat)) return 2
+    switch (cat) {
+      case 'rifle':
+      case 'lmg':
+        return 18
+      case 'smg':
+        return 16
+      case 'sniper':
+        return 19
+      case 'shotgun':
+        return 15
+      case 'pistol':
+        return 14
+      default:
+        return 10
+    }
+  }
+
   hide(): void {
-    for (const key of ['rifle', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
+    for (const key of ['rifle', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
       this.renderer.updateViewmodelGroup(`vm_${key}`, 0, -9999, 0, 0, false)
     }
     this.renderer.updateDynamicSphere('vm_grenade2', 0, -9999, 0, false)
@@ -207,19 +243,19 @@ export class ViewModel {
     const rotY = pose.yaw + Math.PI
 
     // 隐藏全部枪类组与投掷物球
-    for (const key of ['rifle', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
+    for (const key of ['rifle', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
       this.renderer.updateViewmodelGroup(`vm_${key}`, 0, -9999, 0, 0, false)
     }
     this.renderer.updateDynamicSphere('vm_grenade2', 0, -9999, 0, false)
 
-    // 显示当前枪类（lmg 复用 rifle 模型）
+    // 显示当前枪类
     if (isGrenade) {
       this.renderer.updateDynamicSphere('vm_grenade2', cx, cy - 3, cz, !hidden)
     } else {
-      const displayCat = cat === 'lmg' ? 'rifle' : cat
-      this.renderer.updateViewmodelGroup(this.groupId(displayCat), cx, cy, cz, rotY, !hidden)
-      // 持枪手臂（与枪身同一锚点坐标系）
-      this.renderer.updateViewmodelGroup('vm_arms', cx, cy, cz, rotY, !hidden && cat !== 'knife')
+      this.renderer.updateViewmodelGroup(this.groupId(cat), cx, cy, cz, rotY, !hidden)
+      // 持枪手臂：锚点沿枪轴前移到握把位置
+      const a0 = this.armAnchorZ(cat)
+      this.renderer.updateViewmodelGroup('vm_arms', ax + fwd.x * a0, cy, az + fwd.z * a0, rotY, !hidden && cat !== 'knife')
     }
 
     this.muzzle = v3(cx + fwd.x * (30 - kickOff), cy, cz + fwd.z * (30 - kickOff))

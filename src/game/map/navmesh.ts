@@ -16,12 +16,39 @@ export interface NavGrid {
   height: Float32Array
 }
 
-/** 高度场：每格取 XZ 覆盖该格中心的实心 brush 的最高顶面 */
+/** 角色身高净空：格子上方这段距离内不得有实心体（顶棚须高于此值） */
+const BODY_CLEARANCE = 136
+/** 可跨越高差：小于等于此值的近地台阶视为可走上去（阶梯 16u/级） */
+const STEP_UP = 32
+/** 可走地面顶面上限（更高的顶面视为墙体/屋顶，不作地面） */
+const WALK_TOP = 60
+
+/**
+ * 高度场：每格取覆盖该格中心的实心 brush 的最高可走顶面，
+ * 并要求该顶面上方存在角色净空（门洞/隧道顶棚必须高于 BODY_CLEARANCE）。
+ * 网格范围从实心 brush 包围盒自动推导（外扩 64u）。
+ */
 export function buildNavGrid(level: PreppedLevel, cell = 24): NavGrid {
-  const minX = -600
-  const maxX = 600
-  const minZ = -600
-  const maxZ = 600
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const b of level.solids) {
+    if (b.min.x < minX) minX = b.min.x
+    if (b.max.x > maxX) maxX = b.max.x
+    if (b.min.z < minZ) minZ = b.min.z
+    if (b.max.z > maxZ) maxZ = b.max.z
+  }
+  if (!isFinite(minX)) {
+    minX = -600
+    maxX = 600
+    minZ = -600
+    maxZ = 600
+  }
+  minX -= 64
+  minZ -= 64
+  maxX += 64
+  maxZ += 64
   const w = Math.floor((maxX - minX) / cell)
   const h = Math.floor((maxZ - minZ) / cell)
   const walkable = new Uint8Array(w * h)
@@ -36,14 +63,24 @@ export function buildNavGrid(level: PreppedLevel, cell = 24): NavGrid {
       for (const b of level.solids) {
         if (cx < b.min.x || cx > b.max.x) continue
         if (cz < b.min.z || cz > b.max.z) continue
-        if (b.max.y > top) {
+        if (b.max.y <= WALK_TOP && b.max.y > top) {
           top = b.max.y
           hasFloor = true
         }
       }
+      if (!hasFloor) continue
+      let blocked = false
+      for (const b of level.solids) {
+        if (cx < b.min.x || cx > b.max.x) continue
+        if (cz < b.min.z || cz > b.max.z) continue
+        // 高出顶面 STEP_UP 以上的实心体侵入净空 → 不可走（墙/柱/箱）
+        if (b.max.y > top + STEP_UP && b.min.y < top + BODY_CLEARANCE) {
+          blocked = true
+          break
+        }
+      }
       const i = iz * w + ix
-      if (hasFloor && top <= 60) {
-        // 只认 60u 以内的顶面为可走地面（更高视为墙体，A* 绕行）
+      if (!blocked) {
         height[i] = top
         walkable[i] = 1
       }
@@ -86,7 +123,49 @@ export function hasPath(nav: NavGrid, from: { x: number; z: number }, to: { x: n
   return astar(nav, from, to) !== null
 }
 
-/** A* 4 邻接寻路，返回世界坐标路径点（不含起点） */
+/** 最小二叉堆（按 f 值），支持 push/pop，O(log n) */
+class MinHeap {
+  private items: number[] = []
+  private keys: Float64Array
+  constructor(capacity: number) {
+    this.keys = new Float64Array(capacity)
+  }
+  get size(): number {
+    return this.items.length
+  }
+  push(item: number, key: number): void {
+    this.items.push(item)
+    this.keys[item] = key
+    let i = this.items.length - 1
+    while (i > 0) {
+      const p = (i - 1) >> 1
+      if (this.keys[this.items[p]] <= this.keys[this.items[i]]) break
+      ;[this.items[p], this.items[i]] = [this.items[i], this.items[p]]
+      i = p
+    }
+  }
+  pop(): number {
+    const top = this.items[0]
+    const last = this.items.pop()!
+    if (this.items.length > 0) {
+      this.items[0] = last
+      let i = 0
+      for (;;) {
+        const l = i * 2 + 1
+        const r = l + 1
+        let m = i
+        if (l < this.items.length && this.keys[this.items[l]] < this.keys[this.items[m]]) m = l
+        if (r < this.items.length && this.keys[this.items[r]] < this.keys[this.items[m]]) m = r
+        if (m === i) break
+        ;[this.items[m], this.items[i]] = [this.items[i], this.items[m]]
+        i = m
+      }
+    }
+    return top
+  }
+}
+
+/** A* 4 邻接寻路（二叉堆），返回世界坐标路径点（不含起点） */
 export function astar(
   nav: NavGrid,
   from: { x: number; z: number },
@@ -102,26 +181,19 @@ export function astar(
   const [sx, sy] = start
   const [gx, gy] = goal
 
-  const open: number[] = [idx(sx, sy)]
+  const open = new MinHeap(W * H)
   const came = new Int32Array(W * H).fill(-1)
   const g = new Float32Array(W * H).fill(Infinity)
-  const f = new Float32Array(W * H).fill(Infinity)
-  const inOpen = new Uint8Array(W * H)
+  const closed = new Uint8Array(W * H)
   g[idx(sx, sy)] = 0
-  f[idx(sx, sy)] = Math.abs(gx - sx) + Math.abs(gy - sy)
-  inOpen[idx(sx, sy)] = 1
+  open.push(idx(sx, sy), Math.abs(gx - sx) + Math.abs(gy - sy))
 
   const hFn = (x: number, y: number) => Math.abs(gx - x) + Math.abs(gy - y)
 
-  while (open.length > 0) {
-    // 取 f 最小
-    let bi = 0
-    for (let i = 1; i < open.length; i++) {
-      if (f[open[i]] < f[open[bi]]) bi = i
-    }
-    const cur = open[bi]
-    open.splice(bi, 1)
-    inOpen[cur] = 0
+  while (open.size > 0) {
+    const cur = open.pop()
+    if (closed[cur]) continue
+    closed[cur] = 1
     const cx = cur % W
     const cy = Math.floor(cur / W)
     if (cx === gx && cy === gy) {
@@ -144,17 +216,13 @@ export function astar(
       const nx = cx + dx
       const ny = cy + dy
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue
-      if (!nav.walkable[idx(nx, ny)]) continue
       const ni = idx(nx, ny)
+      if (!nav.walkable[ni] || closed[ni]) continue
       const ng = g[cur] + 1
       if (ng < g[ni]) {
         came[ni] = cur
         g[ni] = ng
-        f[ni] = ng + hFn(nx, ny)
-        if (!inOpen[ni]) {
-          open.push(ni)
-          inOpen[ni] = 1
-        }
+        open.push(ni, ng + hFn(nx, ny))
       }
     }
   }
