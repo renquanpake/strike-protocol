@@ -37,10 +37,27 @@ export class GameRenderer {
   private renderer: THREE.WebGLRenderer
   private scene: THREE.Scene
   private camera: THREE.PerspectiveCamera
+  private dprCap = 2
+
+  /** #38：设置渲染分辨率上限（设备像素比） */
+  setDprCap(v: number): void {
+    this.dprCap = v
+    this.renderer.setPixelRatio(v)
+    this.resize()
+  }
+
+  /** #38：画质档位（低关阴影） */
+  setQuality(q: 'low' | 'medium' | 'high'): void {
+    this.renderer.shadowMap.enabled = q !== 'low'
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.isMesh) m.castShadow = q !== 'low'
+    })
+  }
 
   constructor(canvas: HTMLCanvasElement, fov: number) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.renderer.setPixelRatio(this.dprCap)
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.scene = new THREE.Scene()
@@ -76,6 +93,74 @@ export class GameRenderer {
     this.targetMeshes = []
     this.charAnims.clear()
     this.charMats.clear()
+    this.tracers.clear()
+    this.particleClouds.clear()
+  }
+
+  /** #13 曳光池（THREE.Line，additive） */
+  private tracers: Map<string, { line: THREE.Line; mat: THREE.LineBasicMaterial; posAttr: THREE.BufferAttribute }> =
+    new Map()
+
+  addTracer(id: string, color: number = 0xffe08a): void {
+    if (this.tracers.has(id)) return
+    const geo = new THREE.BufferGeometry()
+    const pos = new THREE.BufferAttribute(new Float32Array(6), 3)
+    geo.setAttribute('position', pos)
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending })
+    const line = new THREE.Line(geo, mat)
+    line.frustumCulled = false
+    this.scene.add(line)
+    this.tracers.set(id, { line, mat, posAttr: pos })
+  }
+
+  updateTracer(id: string, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, opacity: number): void {
+    const t = this.tracers.get(id)
+    if (!t) return
+    t.posAttr.setXYZ(0, x1, y1, z1)
+    t.posAttr.setXYZ(1, x2, y2, z2)
+    t.posAttr.needsUpdate = true
+    t.mat.opacity = opacity
+    t.line.visible = opacity > 0
+  }
+
+  /** #32 粒子云（THREE.Points 随机球面偏移，整体跟随中心） */
+  private particleClouds: Map<
+    string,
+    { points: THREE.Points; mat: THREE.PointsMaterial; base: Float32Array; count: number }
+  > = new Map()
+
+  addParticleCloud(id: string, count: number, color: number, size: number): void {
+    if (this.particleClouds.has(id)) return
+    const base = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) {
+      // 单位球内均匀
+      const r = Math.cbrt(Math.random())
+      const th = Math.random() * Math.PI * 2
+      const ph = Math.acos(2 * Math.random() - 1)
+      base[i * 3] = r * Math.sin(ph) * Math.cos(th)
+      base[i * 3 + 1] = r * Math.cos(ph) * 0.6
+      base[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th)
+    }
+    const geo = new THREE.BufferGeometry()
+    const attr = new THREE.BufferAttribute(new Float32Array(base), 3)
+    geo.setAttribute('position', attr)
+    const mat = new THREE.PointsMaterial({ color, size, transparent: true, opacity: 0.55, depthWrite: false })
+    const points = new THREE.Points(geo, mat)
+    points.frustumCulled = false
+    this.scene.add(points)
+    this.particleClouds.set(id, { points, mat, base, count })
+  }
+
+  updateParticleCloud(id: string, cx: number, cy: number, cz: number, radius: number, visible: boolean): void {
+    const c = this.particleClouds.get(id)
+    if (!c) return
+    c.points.visible = visible
+    if (!visible) return
+    const attr = c.points.geometry.getAttribute('position') as THREE.BufferAttribute
+    for (let i = 0; i < c.count; i++) {
+      attr.setXYZ(i, cx + c.base[i * 3] * radius, cy + c.base[i * 3 + 1] * radius, cz + c.base[i * 3 + 2] * radius)
+    }
+    attr.needsUpdate = true
   }
 
   /** 运行时改 FOV（#3 设置层 / #8 开镜共用），调用方自行做逐帧插值。 */

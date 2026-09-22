@@ -56,6 +56,8 @@ export const CONFIG = {
   // 视角
   mouseSens: 0.0021,
   fov: 75,
+  /** #9 动态准星：每度散布对应准星间距像素 */
+  crosshairGapPerDeg: 6,
 
   // 战斗
   movingSpeedThreshold: 30, // u/s：超过即视为移动态散布

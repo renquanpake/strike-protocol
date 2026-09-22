@@ -35,9 +35,12 @@ const stepParams: Record<string, { filter: number; gain: number; ping: number }>
 export class AudioEngine {
   private ctx: Ctx | null = null
   private master: GainNode | null = null
+  private amb: GainNode | null = null
   private noise: AudioBuffer | null = null
   private started = false
   private initialVolume = 0.7
+  private ambientNodes: AudioNode[] = []
+  private musicNodes: AudioNode[] = []
 
   /** 设置初始主音量（init 前调用，供 #3 设置层注入） */
   setInitialVolume(v: number): void {
@@ -48,6 +51,105 @@ export class AudioEngine {
   setMasterVolume(v: number): void {
     this.initialVolume = v
     if (this.master) this.master.gain.value = v
+  }
+
+  /** 运行时改环境/音乐音量（0-1） */
+  setAmbientVolume(v: number): void {
+    if (this.amb) this.amb.gain.value = v
+  }
+
+  /** #12 低血量心跳（双跳），intensity 0-1 控制音量 */
+  heartbeat(intensity: number): void {
+    if (!this.ctx || !this.master) return
+    const g = Math.max(0.05, intensity)
+    this.tone(70, 0.12, g, 'sine')
+    setTimeout(() => this.tone(60, 0.14, g * 0.8, 'sine'), 180)
+  }
+
+  /** #23 无线电提示音（两声短 beep，收音机感） */
+  radioBeep(): void {
+    if (!this.ctx || !this.master) return
+    this.tone(1200, 0.06, 0.12, 'square')
+    setTimeout(() => this.tone(900, 0.08, 0.12, 'square'), 80)
+  }
+
+  /** #34 环境底噪（风声 + 远雷脉冲），对局 live 启动、菜单停止 */
+  startAmbient(): void {
+    if (!this.ctx || !this.master || !this.noise || this.ambientNodes.length > 0) return
+    const ctx = this.ctx
+    const amb = this.ensureAmb()
+    const src = ctx.createBufferSource()
+    src.buffer = this.noise
+    src.loop = true
+    const f = ctx.createBiquadFilter()
+    f.type = 'lowpass'
+    f.frequency.value = 300
+    const g = ctx.createGain()
+    g.gain.value = 0.05
+    src.connect(f)
+    f.connect(g)
+    g.connect(amb)
+    src.start()
+    this.ambientNodes = [src, f, g]
+  }
+
+  stopAmbient(): void {
+    for (const n of this.ambientNodes) {
+      const s = n as unknown as { stop?: () => void }
+      s.stop?.()
+      ;(n as AudioNode).disconnect?.()
+    }
+    this.ambientNodes = []
+  }
+
+  /** #34 主菜单 BGM（程序化 pad 和弦循环） */
+  startMenuMusic(): void {
+    if (!this.ctx || !this.master || this.musicNodes.length > 0) return
+    const ctx = this.ctx
+    const amb = this.ensureAmb()
+    // 简单双振荡 pad（A3 + E4 五度），慢 LFO 音量
+    const freqs = [220, 330, 440]
+    const oscs: OscillatorNode[] = []
+    const lfo = ctx.createOscillator()
+    lfo.frequency.value = 0.12
+    const lfoGain = ctx.createGain()
+    lfoGain.gain.value = 0.03
+    lfo.connect(lfoGain)
+    const base = ctx.createGain()
+    base.gain.value = 0.08
+    for (const fr of freqs) {
+      const o = ctx.createOscillator()
+      o.type = 'sawtooth'
+      o.frequency.value = fr
+      const og = ctx.createGain()
+      og.gain.value = 0.25
+      o.connect(og)
+      og.connect(base)
+      o.start()
+      oscs.push(o)
+    }
+    lfoGain.connect(base.gain)
+    base.connect(amb)
+    lfo.start()
+    this.musicNodes = [lfo, base, ...oscs, lfoGain]
+  }
+
+  stopMenuMusic(): void {
+    for (const n of this.musicNodes) {
+      const s = n as unknown as { stop?: () => void }
+      s.stop?.()
+      ;(n as AudioNode).disconnect?.()
+    }
+    this.musicNodes = []
+  }
+
+  private ensureAmb(): GainNode {
+    if (this.amb) return this.amb
+    const amb = this.ctx!.createGain()
+    amb.gain.value = 0.6
+    amb.connect(this.master!)
+    this.amb = amb
+    return amb
   }
 
   /** 需在用户手势中调用以解锁 AudioContext */

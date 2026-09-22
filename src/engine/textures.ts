@@ -267,6 +267,34 @@ export async function loadImageTextures(map: TextureMap): Promise<void> {
 }
 
 /** 印花贴图：白底生成图 → 运行时提取 alpha（越黑越不透明），用于投射弹孔/烧痕 */
+/** #16 程序化血渍纹理（暗红斑 + 飞溅点，白底=透明、黑区=不透明，与 makeDecalPool 的 alpha 约定一致） */
+export function makeBloodTexture(): THREE.Texture {
+  const c = document.createElement('canvas')
+  c.width = c.height = 128
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, 128, 128)
+  const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 46)
+  g.addColorStop(0, 'rgba(30,0,0,0.95)')
+  g.addColorStop(0.6, 'rgba(40,0,0,0.7)')
+  g.addColorStop(1, 'rgba(40,0,0,0)')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.arc(64, 64, 46, 0, Math.PI * 2)
+  ctx.fill()
+  for (let i = 0; i < 26; i++) {
+    const a = Math.random() * Math.PI * 2
+    const r = 20 + Math.random() * 42
+    ctx.fillStyle = `rgba(30,0,0,${0.4 + Math.random() * 0.5})`
+    ctx.beginPath()
+    ctx.arc(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 1 + Math.random() * 3, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
 export async function makeDecalTexture(url: string): Promise<THREE.Texture> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const i = new Image()

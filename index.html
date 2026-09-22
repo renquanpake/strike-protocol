@@ -31,15 +31,218 @@
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 22px;
-        height: 22px;
-        margin: -11px 0 0 -11px;
-        background:
-          linear-gradient(#0f0, #0f0) center 0 / 2px 7px no-repeat,
-          linear-gradient(#0f0, #0f0) center 100% / 2px 7px no-repeat,
-          linear-gradient(#0f0, #0f0) 0 center / 7px 2px no-repeat,
-          linear-gradient(#0f0, #0f0) 100% center / 7px 2px no-repeat;
+        width: 0;
+        height: 0;
+        --gap: 10px;
+        --color: #d8ffe8;
         opacity: 0.9;
+      }
+      #crosshair i {
+        position: absolute;
+        background: var(--color);
+      }
+      #crosshair .ch-t,
+      #crosshair .ch-b {
+        width: 2px;
+        height: 7px;
+        left: -1px;
+      }
+      #crosshair .ch-t {
+        top: calc(-1 * var(--gap) - 7px);
+      }
+      #crosshair .ch-b {
+        top: var(--gap);
+      }
+      #crosshair .ch-l,
+      #crosshair .ch-r {
+        width: 7px;
+        height: 2px;
+        top: -1px;
+      }
+      #crosshair .ch-l {
+        left: calc(-1 * var(--gap) - 7px);
+      }
+      #crosshair .ch-r {
+        left: var(--gap);
+      }
+      #crosshair .ch-d {
+        width: 4px;
+        height: 4px;
+        left: -2px;
+        top: -2px;
+        border-radius: 50%;
+        display: none;
+      }
+      #crosshair .ch-c {
+        width: 26px;
+        height: 26px;
+        left: -13px;
+        top: -13px;
+        background: none !important;
+        border: 1.5px solid var(--color);
+        border-radius: 50%;
+        display: none;
+      }
+      #crosshair[data-style='dot'] .ch-d {
+        display: block;
+      }
+      #crosshair[data-style='dot'] .ch-t,
+      #crosshair[data-style='dot'] .ch-b,
+      #crosshair[data-style='dot'] .ch-l,
+      #crosshair[data-style='dot'] .ch-r {
+        display: none;
+      }
+      #crosshair[data-style='circle'] .ch-c {
+        display: block;
+      }
+      #crosshair[data-style='circle'] .ch-t,
+      #crosshair[data-style='circle'] .ch-b,
+      #crosshair[data-style='circle'] .ch-l,
+      #crosshair[data-style='circle'] .ch-r {
+        display: none;
+      }
+      #scope {
+        position: absolute;
+        inset: 0;
+        display: none;
+        pointer-events: none;
+        background: radial-gradient(circle at center, transparent 0 42%, rgba(0, 0, 0, 0.96) 42.5% 100%);
+      }
+      #scope::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(#000, #000) center 0 / 1px 100% no-repeat,
+          linear-gradient(#000, #000) center 0 / 100% 1px no-repeat;
+        opacity: 0.55;
+      }
+      #scope[data-mag='2'] {
+        background: radial-gradient(circle at center, transparent 0 20%, rgba(0, 0, 0, 0.97) 20.5% 100%);
+      }
+      #dmgdir {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 140px;
+        height: 140px;
+        margin: -70px 0 0 -70px;
+        pointer-events: none;
+        opacity: 0;
+      }
+      #dmgdir path {
+        fill: none;
+        stroke: rgba(220, 40, 40, 0.9);
+        stroke-width: 6;
+        stroke-linecap: round;
+      }
+      #killfeed {
+        position: absolute;
+        right: 14px;
+        top: 200px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 3px;
+        pointer-events: none;
+      }
+      #killfeed .kf {
+        font-size: 12px;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 3px;
+        padding: 3px 8px;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+      #killfeed .kf .t {
+        color: #ff9d5c;
+      }
+      #killfeed .kf .ct {
+        color: #7fb0ff;
+      }
+      #killfeed .kf .hs {
+        color: #ff5252;
+        font-weight: bold;
+      }
+      #killreward {
+        position: absolute;
+        left: calc(50% + 26px);
+        top: calc(50% + 4px);
+        font-size: 14px;
+        color: #ffd257;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s;
+      }
+      #killreward .hs {
+        color: #ff5252;
+      }
+      #spectate {
+        position: absolute;
+        left: 50%;
+        bottom: 60px;
+        transform: translateX(-50%);
+        font-size: 13px;
+        color: #ffd257;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 5px 14px;
+        border-radius: 3px;
+        display: none;
+        pointer-events: none;
+      }
+      #radio {
+        position: absolute;
+        left: 14px;
+        bottom: 48px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        pointer-events: none;
+      }
+      #radio .rq {
+        font-size: 12px;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 3px 8px;
+        border-radius: 3px;
+        border-left: 2px solid #7fb0ff;
+      }
+      #radio .rq.team-T {
+        border-left-color: #ff9d5c;
+        color: #ffb27f;
+      }
+      #radio .rq.team-CT {
+        color: #9cc4ff;
+      }
+      #toasts {
+        position: absolute;
+        left: 50%;
+        bottom: 90px;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        pointer-events: none;
+      }
+      #toasts .toast {
+        font-size: 13px;
+        background: rgba(10, 14, 18, 0.9);
+        border: 1px solid rgba(255, 210, 87, 0.5);
+        color: #ffd257;
+        padding: 7px 16px;
+        border-radius: 4px;
+        letter-spacing: 0.04em;
+        animation: toastIn 0.2s ease-out;
+      }
+      @keyframes toastIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
       }
       #lock-hint {
         position: absolute;
@@ -235,12 +438,24 @@
   </head>
   <body>
     <canvas id="game"></canvas>
-    <div id="hud">
-      <div id="crosshair"></div>
-      <div id="blind"></div>
-      <div id="hitmarker"></div>
-      <div id="dmg"></div>
-      <div id="lock-hint">
+      <div id="hud">
+        <div id="crosshair" data-style="cross">
+          <i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-d"></i><i class="ch-c"></i>
+        </div>
+        <div id="scope" data-mag="1"></div>
+        <div id="blind"></div>
+        <div id="hitmarker"></div>
+        <div id="dmg"></div>
+        <svg id="dmgdir" viewBox="0 0 140 140">
+          <path id="dmgdir-a" d="M 35 35 A 42.4 42.4 0 0 1 105 35" />
+          <path id="dmgdir-b" d="M 35 35 A 42.4 42.4 0 0 1 105 35" />
+        </svg>
+        <div id="killreward"></div>
+        <div id="spectate"></div>
+        <div id="radio"></div>
+        <div id="killfeed"></div>
+        <div id="toasts"></div>
+        <div id="lock-hint">
         <div class="title">STRIKE PROTOCOL</div>
         点击画面锁定鼠标开始<br />
         WASD 移动 / 空格 跳跃(按住连跳) / Shift 静走 / Ctrl 蹲<br />
