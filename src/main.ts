@@ -5,7 +5,7 @@ import { prepareLevel } from './game/physics/collision'
 import { buildNavGrid } from './game/map/navmesh'
 import { updatePlayerMovement, setMouseSensScale } from './game/systems/movement'
 import { updateWeaponSystem, fireWeapon, viewForward, viewRight } from './game/systems/weapon'
-import { updateTargets } from './game/systems/targets'
+import { updateTargets, trainingTargets } from './game/systems/targets'
 import { updateRound } from './game/systems/round'
 import { updateGrenades } from './game/systems/grenade'
 import { updateDrops } from './game/systems/drops'
@@ -29,7 +29,7 @@ import { updateShells, spawnShell, type Shell } from './game/particles'
 import { raycastBoxes } from './game/physics/raycast'
 import { v3 } from './engine/math'
 import { loadSettings, loadMatchConfig, type Settings, type MatchConfig } from './ui/settings'
-import { WEAPONS } from './game/weapons'
+import { WEAPONS, newWeaponInstance } from './game/weapons'
 import { activeWeapon } from './game/systems/weapon'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
@@ -238,6 +238,12 @@ events.on('hit', (e) => {
     }
   }
 })
+// #37 训练场：命中靶子显示伤害 / 部位（本地玩家）
+events.on('hit', (e) => {
+  const st = state
+  if (!st?.training || e.attackerId !== 0) return
+  if (st.targets.some((x) => x.id === e.victimId)) feedback?.showDamage(e.damage, e.part)
+})
 // #5 击杀播报 + #14 击杀奖励 + #16 血迹
 events.on('playerKilled', (e) => {
   const st = state
@@ -370,7 +376,7 @@ function stepLogic(dt: number): void {
     fireWeapon(st, p, prepped, events)
     updateDrops(st, p, events)
   }
-  updateTargets(st)
+  updateTargets(st, dt)
   updateGrenades(st, prepped, events, dt)
   updateRound(st, prepped, events, dt)
   st.tick += 1
@@ -385,7 +391,7 @@ function refreshDynamic(): void {
     renderer.updateHumanoid(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.yaw, p.alive, false, moving)
   }
   const c4 = st.round.c4
-  const c4Visible = c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted'
+  const c4Visible = st.mode === 'de' && (c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted')
   renderer.updateDynamicBox('c4', c4.position.x, c4.position.y, c4.position.z, c4Visible)
   refreshGrenades()
 }
@@ -732,8 +738,32 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
     rngSeed: seed,
   })
   state.seed = seed
-  state.round.phaseEndTick = Math.round((CONFIG.warmupMs / 1000) * CONFIG.tickRate)
-  state.targets = []
+  if (cfg.mapId === 'training') {
+    // #37 训练场：填靶 + 无限弹 + 金钱锁
+    state.targets = trainingTargets()
+    state.training = true
+    for (const p of state.players) p.money = 16000
+  }
+  if (cfg.mode === 'de') {
+    state.round.phaseEndTick = Math.round((CONFIG.warmupMs / 1000) * CONFIG.tickRate)
+  } else {
+    // #36 死斗/团队死斗：跳过 warmup 直接 live，固定配装 + 金钱锁
+    state.round.phase = 'live'
+    state.round.phaseEndTick = Infinity
+    for (const p of state.players) {
+      p.weapons.primary = newWeaponInstance('m4')
+      p.weapons.secondary = newWeaponInstance('deagle')
+      p.weapons.grenades = [
+        newWeaponInstance('he'),
+        newWeaponInstance('flash'),
+        newWeaponInstance('smoke'),
+        newWeaponInstance('molotov'),
+      ]
+      p.activeSlot = 0
+      p.money = 16000
+    }
+  }
+  if (!state.training) state.targets = []
   botCtx = createBotContext(state, level.sites, state.difficulty)
 
   // 重建渲染世界

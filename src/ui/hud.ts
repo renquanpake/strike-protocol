@@ -63,6 +63,15 @@ export class HUD {
 export function roundLine(state: GameState): string {
   const r = state.round
   const p = state.players[0]
+  // #36 死斗/团队死斗：显示击杀目标进度
+  if (state.mode === 'dm') {
+    return `死斗 · 个人 ${p.kills}/${CONFIG.dmKillTarget}`
+  }
+  if (state.mode === 'tdm') {
+    const t = state.players.filter((x) => x.team === 'T').reduce((a, x) => a + x.kills, 0)
+    const ct = state.players.filter((x) => x.team === 'CT').reduce((a, x) => a + x.kills, 0)
+    return `团队死斗 · T ${t}/${CONFIG.tdmKillTarget} : ${ct}/${CONFIG.tdmKillTarget} CT`
+  }
   let timer = ''
   if (r.phase === 'freeze') timer = `BUY ${(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate).toFixed(1)}s`
   else if (r.phase === 'live') timer = `${(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate).toFixed(0)}s`

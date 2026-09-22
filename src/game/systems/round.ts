@@ -109,6 +109,11 @@ function endRound(state: GameState, winner: Team, result: 'elimination' | 'timeo
 
 /** 每 tick 回合状态机 */
 export function updateRound(state: GameState, level: PreppedLevel, events: EventBus, dt: number): void {
+  // #36 死斗/团队死斗：无回合概念，走 FFA 分支（复活 + 击杀目标）
+  if (state.mode !== 'de') {
+    updateRoundFfa(state, level, events)
+    return
+  }
   const r = state.round
   const tick = state.tick
 
@@ -267,4 +272,71 @@ function siteAt(
 
 export function aliveCount(state: GameState, team: Team): number {
   return teamPlayers(state, team).filter((p) => p.alive).length
+}
+
+/** #36 死斗/团队死斗：复活（避开 300u 内敌人）+ 击杀目标判定 */
+function updateRoundFfa(state: GameState, level: PreppedLevel, events: EventBus): void {
+  const r = state.round
+  const tick = state.tick
+  if (r.phase === 'matchEnd') return
+  const respawnTicks = msToTicks(CONFIG.ffaRespawnMs)
+  for (const p of state.players) {
+    if (p.alive || p.deathTick < 0) continue
+    if (tick - p.deathTick < respawnTicks) continue
+    const sp = pickRespawn(state, level, p)
+    p.position = { x: sp.x, y: sp.y + 40, z: sp.z }
+    p.velocity = { x: 0, y: 0, z: 0 }
+    p.alive = true
+    p.health = CONFIG.healthMax
+    p.onGround = false
+    p.yaw = 0
+    p.pitch = 0
+    p.blindUntil = 0
+    p.deathTick = -1
+  }
+  if (state.mode === 'dm') {
+    for (const p of state.players) {
+      if (p.kills >= CONFIG.dmKillTarget) {
+        r.phase = 'matchEnd'
+        r.phaseEndTick = Infinity
+        r.lastWinner = p.team
+        r.lastResult = 'elimination'
+        events.emit({ type: 'roundEnd', winner: p.team, reason: 'killTarget' })
+        return
+      }
+    }
+  } else if (state.mode === 'tdm') {
+    const tKills = teamPlayers(state, 'T').reduce((a, p) => a + p.kills, 0)
+    const ctKills = teamPlayers(state, 'CT').reduce((a, p) => a + p.kills, 0)
+    if (tKills >= CONFIG.tdmKillTarget || ctKills >= CONFIG.tdmKillTarget) {
+      const winner: Team = tKills >= ctKills ? 'T' : 'CT'
+      r.phase = 'matchEnd'
+      r.phaseEndTick = Infinity
+      r.lastWinner = winner
+      r.lastResult = 'elimination'
+      events.emit({ type: 'roundEnd', winner, reason: 'killTarget' })
+      return
+    }
+  }
+}
+
+/** 选出生点：同阵营 spawn 中离最近存活敌人最远者 */
+function pickRespawn(state: GameState, level: PreppedLevel, p: { team: Team; position: { x: number; z: number } }): { x: number; y: number; z: number } {
+  const spawns = level.spawns[p.team]
+  if (spawns.length === 0) return { x: 0, y: 0, z: 0 }
+  let best = spawns[0]
+  let bestDist = -1
+  for (const sp of spawns) {
+    let minEnemy = Infinity
+    for (const e of state.players) {
+      if (e.team === p.team || !e.alive) continue
+      const d = Math.hypot(e.position.x - sp.x, e.position.z - sp.z)
+      if (d < minEnemy) minEnemy = d
+    }
+    if (minEnemy > bestDist) {
+      bestDist = minEnemy
+      best = sp
+    }
+  }
+  return best
 }

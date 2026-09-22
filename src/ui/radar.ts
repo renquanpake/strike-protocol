@@ -45,7 +45,7 @@ export class Radar {
 
     // C4
     const c4 = state.round.c4
-    if (c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted') {
+    if (state.mode === 'de' && (c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted')) {
       const [cx, cy] = this.toRadar(c4.position.x, c4.position.z, px, pz)
       ctx.fillStyle = c4.state === 'planted' ? '#ff5533' : '#ffaa00'
       ctx.fillRect(cx - 2, cy - 2, 4, 4)

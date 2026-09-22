@@ -112,6 +112,23 @@ export class Feedback {
     }, 900)
   }
 
+  // ===== #37 训练场命中伤害/部位浮动 =====
+  showDamage(amount: number, part: string): void {
+    const partName: Record<string, string> = {
+      head: '头部',
+      chest: '胸部',
+      stomach: '腹部',
+      arms: '手臂',
+      legs: '腿部',
+    }
+    this.killreward.innerHTML = `${partName[part] ?? part} <b>${Math.round(amount)}</b>`
+    this.killreward.style.opacity = '1'
+    clearTimeout((this as unknown as { _krT?: number })._krT)
+    ;(this as unknown as { _krT?: number })._krT = setTimeout(() => {
+      this.killreward.style.opacity = '0'
+    }, 700)
+  }
+
   // ===== #23 无线电 =====
   addRadio(team: 'T' | 'CT', key: string, name: string): void {
     const div = document.createElement('div')

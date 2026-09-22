@@ -82,6 +82,8 @@ export interface PlayerEntity {
   blindUntil: number
   /** 脚步计时（ms 累计，触发 footstep 事件用） */
   stepTimer: number
+  /** #36 死亡 tick（死斗复活计时），-1=存活 */
+  deathTick: number
   /** 本 tick 输入（Bot 为合成输入） */
   input: InputFrame
 }
@@ -142,6 +144,10 @@ export interface GameState {
   nextDropId: number
   /** #35：本回合被打碎的玻璃 brush（回合重置清空并恢复 solids） */
   brokenGlass: Brush[]
+  /** #36 对局模式：de 爆破 / dm 死斗 / tdm 团队死斗（默认 de） */
+  mode: 'de' | 'dm' | 'tdm'
+  /** #37 训练场：无限弹药 / 金钱锁 / 伤害数字 */
+  training: boolean
 }
 
 export function makePlayer(
@@ -186,6 +192,7 @@ export function makePlayer(
     firstKills: 0,
     blindUntil: 0,
     stepTimer: 0,
+    deathTick: -1,
     input: emptyInput(),
   }
 }
@@ -201,6 +208,8 @@ export interface MatchOptions {
   rngSeed?: number
   /** bot 难度 1-10（默认 5） */
   difficulty?: number
+  /** #36 对局模式（默认 de 爆破） */
+  mode?: 'de' | 'dm' | 'tdm'
 }
 
 /** #24：bot 名字池（CS 风，无重复） */
@@ -224,6 +233,7 @@ export function createGameState(
   const playerName = options.playerName ?? 'YOU'
   const seed = options.rngSeed ?? 0x5eed
   const difficulty = options.difficulty ?? 5
+  const mode = options.mode ?? 'de'
   // 每侧人数 N：ceil((botCount+1)/2)，两侧合计 botCount+1（含本地玩家）
   const perSide = Math.max(1, Math.ceil((botCount + 1) / 2))
   const localTeamBots = perSide - 1
@@ -281,6 +291,8 @@ export function createGameState(
     droppedWeapons: [],
     nextDropId: 1,
     brokenGlass: [],
+    mode,
+    training: false,
   }
 }
 

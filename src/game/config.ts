@@ -100,6 +100,11 @@ export const CONFIG = {
   roundEndMs: 5000,
   halftimeMs: 15000,
   winRounds: 16,
+  /** #36 死斗：个人先 N 杀 / 团队死斗队先 N 杀 */
+  dmKillTarget: 30,
+  tdmKillTarget: 50,
+  /** #36 死斗复活延迟 ms */
+  ffaRespawnMs: 3000,
   startMoney: 800,
   moneyCap: 16000,
   roundWinBonus: 3000,

@@ -11,6 +11,8 @@ export interface Target {
   hitFlashTick: number
   alive: boolean
   respawnAtTick: number
+  /** #37 移动靶：沿 axis 在 base±half 往返，speed u/s */
+  track?: { axis: 'x' | 'z'; base: number; half: number; speed: number; dir: number }
 }
 
 export interface TargetAABB {

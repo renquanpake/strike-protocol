@@ -147,8 +147,9 @@ export function fireWeapon(
     return
   }
 
-  if (w.ammoMag <= 0) return
-  w.ammoMag -= 1
+  // #37 训练场：无限弹药（不扣弹匣）
+  if (w.ammoMag <= 0 && !state.training) return
+  if (!state.training) w.ammoMag -= 1
   w.burstCount += 1
   w.nextFireTick = state.tick + msToTicks(def.fireRateMs)
 
@@ -253,6 +254,7 @@ function applyPlayerHit(
   if (victim.health <= 0) {
     victim.alive = false
     victim.deaths += 1
+    victim.deathTick = state.tick
     shooter.kills += 1
     if (headshot) shooter.headshotKills += 1
     // 首杀：该玩家本局（tick 内）尚无击杀即为本回合开局击杀——简化用本局首个 kill

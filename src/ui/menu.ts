@@ -378,6 +378,7 @@ export function matchOptionsFromCfg(cfg: MatchConfig) {
     playerName: cfg.playerName,
     rngSeed: cfg.seed,
     difficulty: cfg.difficulty,
+    mode: cfg.mode,
   }
 }
 

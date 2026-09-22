@@ -1,15 +1,18 @@
 import type { Vec3 } from '../../engine/math'
 import type { Brush, BrushMaterial, LevelDef } from './layout'
+import { buildTraining } from './training'
 
-export type MapId = 'de_sahara'
+export type MapId = 'de_sahara' | 'training'
 
 /** #1/#28：地图注册表。新增地图在此登记 build()，matchLevel(mapId) 按 id 取。 */
 const MAP_BUILDERS: Record<string, () => LevelDef> = {
   de_sahara: () => buildDeSahara(),
+  training: () => buildTraining(),
 }
 
 export const AVAILABLE_MAPS: { id: MapId; label: string }[] = [
   { id: 'de_sahara', label: 'de_sahara（沙漠）' },
+  { id: 'training', label: 'training（训练场）' },
 ]
 
 export function matchLevel(mapId: MapId = 'de_sahara'): LevelDef {

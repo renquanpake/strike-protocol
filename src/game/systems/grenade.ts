@@ -127,6 +127,7 @@ function killPlayer(state: GameState, victim: (typeof state.players)[number], at
   victim.alive = false
   victim.health = 0
   victim.deaths += 1
+  victim.deathTick = state.tick
   if (attackerId >= 0) {
     const killer = state.players[attackerId]
     if (killer) {
