@@ -284,6 +284,9 @@ export class GameRenderer {
   private decals: { pool: THREE.Mesh[]; free: number[]; size: number; texture: THREE.Texture }[] = []
 
   // ===== 开源人物模型（Quaternius CC0）：模板 + 每实例动画状态 =====
+  /** #30 阵营差异化：T/CT 各一人物模板（缺某阵营则回退共享模板） */
+  private charTemplates: Record<'T' | 'CT', THREE.Object3D | null> = { T: null, CT: null }
+  private charClipsByTeam: Record<'T' | 'CT', THREE.AnimationClip[]> = { T: [], CT: [] }
   private charTemplate: THREE.Object3D | null = null
   private charClips: THREE.AnimationClip[] = []
   private charScale = 1
@@ -300,8 +303,9 @@ export class GameRenderer {
   > = new Map()
   private charMats: Map<number, Map<THREE.Material, THREE.Material>> = new Map()
 
-  /** 加载人物 GLB 模板，按玩家身高 140u 归一化；失败返回 false（bot 退回色块人形） */
-  async loadCharacterModel(url: string): Promise<boolean> {
+  /** 加载人物 GLB 模板，按玩家身高 140u 归一化；失败返回 false（bot 退回色块人形）。
+   * #30：team 指定阵营模板（缺该阵营时回退共享 charTemplate） */
+  async loadCharacterModel(url: string, team: 'T' | 'CT' = 'T'): Promise<boolean> {
     try {
       const gltf = await new GLTFLoader().loadAsync(url)
       // 作者残留：Armature 根带约 15° X 轴旋转，归零保持站立姿态笔直
@@ -343,15 +347,30 @@ export class GameRenderer {
       this.charScale = 140 / h
       gltf.scene.scale.setScalar(this.charScale)
       gltf.scene.position.y = -miny * this.charScale
+      // #30 记录阵营模板（共享字段指向 T 模板以兼容旧逻辑）
+      this.charTemplates[team] = gltf.scene
+      this.charClipsByTeam[team] = gltf.animations
+      if (team === 'T') {
+        this.charTemplate = gltf.scene
+        this.charClips = gltf.animations
+      }
       if (import.meta.env.DEV) {
-        console.log(`[char] ${url} h=${h.toFixed(3)} scale=${this.charScale.toFixed(2)} anims=${this.charClips.length}`)
+        console.log(`[char:${team}] ${url} h=${h.toFixed(3)} scale=${this.charScale.toFixed(2)} anims=${gltf.animations.length}`)
       }
       return true
     } catch (e) {
-      console.warn('[char] 加载失败，bot 退回色块人形', e)
-      this.charTemplate = null
+      console.warn(`[char:${team}] 加载失败，该阵营退回共享/色块人形`, e)
+      this.charTemplates[team] = null
       return false
     }
+  }
+
+  /** #30 取某阵营人物模板（缺则回退共享 charTemplate） */
+  private charTemplateFor(team: 'T' | 'CT'): THREE.Object3D | null {
+    return this.charTemplates[team] ?? this.charTemplate
+  }
+  private charClipsFor(team: 'T' | 'CT'): THREE.AnimationClip[] {
+    return this.charClipsByTeam[team].length > 0 ? this.charClipsByTeam[team] : this.charClips
   }
 
   /** 逐帧驱动所有人物动画混合器 */
@@ -542,10 +561,14 @@ export class GameRenderer {
     d.free.push(instanceIdx)
   }
 
-  /** 人形 bot：优先蒙皮人物模型，模板缺失时退回色块盒人形 */
-  addHumanoid(id: string, camo: THREE.Texture, accent: number): void {
+  /** 人形 bot：优先蒙皮人物模型（#30 按阵营选模板），模板缺失时退回色块盒人形 */
+  addHumanoid(id: string, camo: THREE.Texture, accent: number, team: 'T' | 'CT' = 'T'): void {
+    if (this.charTemplateFor(team) && this.charClipsFor(team).length > 0) {
+      this.addSkinnedHumanoid(id, accent, team)
+      return
+    }
     if (this.charTemplate && this.charClips.length > 0) {
-      this.addSkinnedHumanoid(id, accent)
+      this.addSkinnedHumanoid(id, accent, 'T')
       return
     }
     const group = new THREE.Group()
@@ -583,9 +606,10 @@ export class GameRenderer {
     })
   }
 
-  /** 蒙皮人物实例：克隆模板 + 阵营纯色身体 + 头部中性提亮 + idle/jog/death 动画状态 */
-  private addSkinnedHumanoid(id: string, accent: number): void {
-    const template = this.charTemplate!
+  /** 蒙皮人物实例：克隆模板 + 阵营纯色身体 + 头部中性提亮 + idle/jog/death 动画状态（#30 按阵营选模板） */
+  private addSkinnedHumanoid(id: string, accent: number, team: 'T' | 'CT' = 'T'): void {
+    const template = this.charTemplateFor(team) ?? this.charTemplate!
+    const clips = this.charClipsFor(team)
     const model = skeletonClone(template) as THREE.Group
     // 材质按 accent 缓存：身体纯色 mannequin（去贴图）、头部/发保留贴图中性提亮、眼睛保留
     const tintDef = CHAR_TINTS[accent] ?? CHAR_TINTS[0xc8862a]
@@ -638,7 +662,7 @@ export class GameRenderer {
     const mixer = new THREE.AnimationMixer(model)
     const pick = (...names: string[]): THREE.AnimationClip | undefined => {
       for (const n of names) {
-        const c = this.charClips.find((x) => x.name === n)
+        const c = clips.find((x) => x.name === n)
         if (c) return c
       }
       return undefined

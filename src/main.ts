@@ -839,7 +839,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
     if (p.id === 0) continue
     const camo = p.team === 'T' ? textures.bot_t : textures.bot_ct
     const accent = p.team === 'T' ? 0xc8862a : 0x3f6fae
-    renderer.addHumanoid(`bot:${p.id}`, camo, accent)
+    renderer.addHumanoid(`bot:${p.id}`, camo, accent, p.team)
   }
   renderer.addDynamicBox('c4', 14, 8, 10, 0xd0342c)
   // 弹壳池重新注册
@@ -882,9 +882,11 @@ async function init(): Promise<void> {
   // 先加载生图表面贴图（失败回退 canvas），再建世界
   await loadImageTextures(textures)
   // 人物模型（three.js 官方 Soldier「Vanguard」CC 资产；失败回退 character.glb 再退回色块）
-  if (!(await renderer.loadCharacterModel('/models/soldier.glb'))) {
-    await renderer.loadCharacterModel('/models/character.glb')
+  if (!(await renderer.loadCharacterModel('/models/soldier.glb', 'T'))) {
+    await renderer.loadCharacterModel('/models/character.glb', 'T')
   }
+  // #30 阵营差异化：CT 独立模板（缺则回退共享 T 模板，不影响可用性）
+  await renderer.loadCharacterModel('/models/ct_soldier.glb', 'CT').catch(() => false)
   feedback = new Feedback(hudRoot, radarCanvas)
   // 首局：直接进主菜单，背景先渲染一张默认地图
   void startMatch({ ...matchConfig })
