@@ -45,3 +45,12 @@
   - 无缝贴图生成：`cd /workspace && node tools/imggen/gen.mjs [file...]`（读 `tools/imggen/queue.json`，调 agnes 生图 API，写 `public/textures/{file}.png`，`--force` 重生成）；新贴图需在 `src/engine/textures.ts` 的 `buildTextures` + `loadImageTextures` 登记键。
   - GLB 压缩管线：`/tmp/opencode/gltftrim/`（gltf-transform v4 + sharp + meshoptimizer），模板 `trim_soldier.mjs`、检查 `inspect.mjs`。v4 注意：`io.writeBinary(doc)` 返回 Uint8Array（自己写盘）；禁用 meshopt/quantize（会删 Skin）。
   - 方法论已沉淀为项目 skill：`.opencode/skills/character-asset-pipeline/SKILL.md`、`.opencode/skills/map-build-craft/SKILL.md`。
+
+### [构建基线: 完整化后测试数与 PWA]
+- Date: 2026-09-22
+- Context: Agent 完成 44 项 backlog 全量开发
+- Category: 构建方法
+- Instructions:
+  - 完整化后测试基线从 75 → **79**（`npx vitest run` 全绿为验收线，新增 4 条 de_plaza 路由回归）。
+  - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 46 项（models/textures，上限 4MB 因 character.glb 3.25MB）；dev 模式 PWA 不生效。
+  - 地图现为 3 张：`de_sahara`（默认）/`de_plaza`（第二张对战图）/`training`（训练场），注册在 `src/game/map/match.ts` 的 `MAP_BUILDERS`；新增图需在该表登记 + routes.test.ts 加路由回归。
