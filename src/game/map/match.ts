@@ -1,17 +1,20 @@
 import type { Vec3 } from '../../engine/math'
 import type { Brush, BrushMaterial, LevelDef } from './layout'
 import { buildTraining } from './training'
+import { buildDePlaza } from './de_plaza'
 
-export type MapId = 'de_sahara' | 'training'
+export type MapId = 'de_sahara' | 'de_plaza' | 'training'
 
 /** #1/#28：地图注册表。新增地图在此登记 build()，matchLevel(mapId) 按 id 取。 */
 const MAP_BUILDERS: Record<string, () => LevelDef> = {
   de_sahara: () => buildDeSahara(),
+  de_plaza: () => buildDePlaza(),
   training: () => buildTraining(),
 }
 
 export const AVAILABLE_MAPS: { id: MapId; label: string }[] = [
   { id: 'de_sahara', label: 'de_sahara（沙漠）' },
+  { id: 'de_plaza', label: 'de_plaza（城市广场）' },
   { id: 'training', label: 'training（训练场）' },
 ]
 
