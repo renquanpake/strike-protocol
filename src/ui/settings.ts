@@ -25,6 +25,24 @@ export interface Settings {
   resolution: 1 | 1.5 | 2
   language: 'zh' | 'en'
   teamColors: 'default' | 'deuteranopia'
+  /** #42 改键：action → KeyboardEvent.code */
+  binds: Record<string, string>
+}
+
+/** #42 默认键位（与历史硬编码一致） */
+export const DEFAULT_BINDS: Record<string, string> = {
+  forward: 'KeyW',
+  back: 'KeyS',
+  left: 'KeyA',
+  right: 'KeyD',
+  jump: 'Space',
+  crouch: 'ControlLeft',
+  walk: 'ShiftLeft',
+  reload: 'KeyR',
+  buy: 'KeyB',
+  drop: 'KeyG',
+  use: 'KeyE',
+  scoreboard: 'Tab',
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   resolution: 2,
   language: 'zh',
   teamColors: 'default',
+  binds: { ...DEFAULT_BINDS },
 }
 
 const KEY = 'sp_settings'
@@ -54,6 +73,7 @@ export function loadSettings(): Settings {
     ...DEFAULT_SETTINGS,
     ...stored,
     crosshair: { ...DEFAULT_SETTINGS.crosshair, ...(stored.crosshair ?? {}) },
+    binds: { ...DEFAULT_BINDS, ...(stored.binds ?? {}) },
   }
 }
 

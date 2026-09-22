@@ -5,6 +5,7 @@
 import { WEAPONS } from '../game/weapons'
 import { activeWeapon, spreadDegrees } from '../game/systems/weapon'
 import type { PlayerEntity } from '../game/state'
+import { t } from './strings'
 
 const TEAM_CLASS: Record<string, string> = { T: 't', CT: 'ct' }
 
@@ -133,15 +134,15 @@ export class Feedback {
   addRadio(team: 'T' | 'CT', key: string, name: string): void {
     const div = document.createElement('div')
     div.className = `rq team-${team}`
-    const text: Record<string, string> = {
-      bombPlanted: `${name}: 已下包！`,
-      bombDefused: `${name}: 拆掉了`,
-      enemySpotted: `${name}: 看到敌人了`,
-      needBackup: `${name}: 需要支援`,
-      flashOut: `${name}: 闪光来了`,
-      niceShot: `${name}: 漂亮击杀`,
+    const map: Record<string, string> = {
+      bombPlanted: t('radio.planted'),
+      bombDefused: t('radio.defused'),
+      enemySpotted: t('radio.spotted'),
+      needBackup: t('radio.backup'),
+      flashOut: t('radio.flash'),
+      niceShot: t('radio.nice'),
     }
-    div.textContent = text[key] ?? `${name}: …`
+    div.textContent = `${name}: ${map[key] ?? '…'}`
     this.radio.appendChild(div)
     while (this.radio.children.length > 3) this.radio.removeChild(this.radio.firstChild as Node)
     setTimeout(() => div.remove(), 3000)

@@ -1,0 +1,104 @@
+/**
+ * #42 国际化：中英双语字典 + 当前语言（由设置注入，运行时可切）。
+ * 用法：`t('buy.primary')` 取当前语言文案。未命中回退 zh。
+ */
+export type Lang = 'zh' | 'en'
+
+let current: Lang = 'zh'
+export function setLanguage(l: Lang): void {
+  current = l
+}
+export function getLanguage(): Lang {
+  return current
+}
+
+const DICT: Record<Lang, Record<string, string>> = {
+  zh: {
+    'ui.start': '开 始 对 局',
+    'ui.pause': '已暂停',
+    'ui.resume': '继 续',
+    'ui.toMenu': '回主菜单',
+    'ui.rematch': '再战一局',
+    'ui.map': '地图',
+    'ui.mode': '模式',
+    'ui.side': '阵营',
+    'ui.difficulty': 'Bot 难度',
+    'ui.bots': 'Bot 总数',
+    'ui.name': '玩家名',
+    'ui.seed': '种子（可选）',
+    'ui.settings': '设置',
+    'ui.career': '生涯',
+    'ui.quality': '画质',
+    'ui.fps': 'FPS',
+    'mode.de': '爆破',
+    'mode.dm': '死斗',
+    'mode.tdm': '团队死斗',
+    'buy.sub': '副武器',
+    'buy.primary': '主武器',
+    'buy.grenade': '投掷物',
+    'buy.gear': '装备',
+    'buy.kit': '拆弹钳',
+    'buy.armor': '防弹衣',
+    'buy.armorHelmet': '防弹衣+头盔',
+    'buy.owned': '已持有',
+    'radio.planted': '已下包！',
+    'radio.defused': '拆掉了',
+    'radio.spotted': '看到敌人了',
+    'radio.backup': '需要支援',
+    'radio.flash': '闪光来了',
+    'radio.nice': '漂亮击杀',
+    'hud.warmup': '热身',
+    'hud.halftime': '中场换边',
+    'hud.roundOver': '回合结束',
+    'hud.matchOver': '比赛结束',
+    'hud.c4Carry': 'C4:携带',
+    'hud.c4Drop': 'C4:掉落',
+    'hud.c4Planted': 'C4:已安放',
+  },
+  en: {
+    'ui.start': 'S T A R T',
+    'ui.pause': 'PAUSED',
+    'ui.resume': 'R E S U M E',
+    'ui.toMenu': 'MAIN MENU',
+    'ui.rematch': 'REMATCH',
+    'ui.map': 'Map',
+    'ui.mode': 'Mode',
+    'ui.side': 'Team',
+    'ui.difficulty': 'Bot Difficulty',
+    'ui.bots': 'Bots',
+    'ui.name': 'Name',
+    'ui.seed': 'Seed (opt)',
+    'ui.settings': 'Settings',
+    'ui.career': 'Career',
+    'ui.quality': 'Quality',
+    'ui.fps': 'FPS',
+    'mode.de': 'Demolition',
+    'mode.dm': 'Deathmatch',
+    'mode.tdm': 'Team Deathmatch',
+    'buy.sub': 'Secondary',
+    'buy.primary': 'Primary',
+    'buy.grenade': 'Grenades',
+    'buy.gear': 'Gear',
+    'buy.kit': 'Defuse Kit',
+    'buy.armor': 'Kevlar',
+    'buy.armorHelmet': 'Kevlar + Helmet',
+    'buy.owned': 'Owned',
+    'radio.planted': 'Bomb planted!',
+    'radio.defused': 'Defused',
+    'radio.spotted': 'I see enemies',
+    'radio.backup': 'Need backup',
+    'radio.flash': 'Flash out',
+    'radio.nice': 'Nice shot',
+    'hud.warmup': 'WARMUP',
+    'hud.halftime': 'HALFTIME',
+    'hud.roundOver': 'ROUND OVER',
+    'hud.matchOver': 'MATCH OVER',
+    'hud.c4Carry': 'C4:carry',
+    'hud.c4Drop': 'C4:dropped',
+    'hud.c4Planted': 'C4:planted',
+  },
+}
+
+export function t(key: string): string {
+  return DICT[current][key] ?? DICT.zh[key] ?? key
+}

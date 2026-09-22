@@ -5,6 +5,8 @@
 import type { MatchConfig } from './settings'
 import { loadSettings, saveSettings, loadMatchConfig, saveMatchConfig, DEFAULT_SETTINGS, type Settings } from './settings'
 import { AVAILABLE_MAPS, type MapId } from '../game/map/match'
+import { loadCareer } from '../game/career'
+import { setLanguage } from './strings'
 import type { GameState } from '../game/state'
 
 const CSS = `
@@ -88,12 +90,50 @@ export class MenuUI {
     const tabs = this.mkEl('div', 'sp-tabs')
     const matchTab = this.mkEl('div', 'sp-tab active', '对局')
     const setTab = this.mkEl('div', 'sp-tab', '设置')
+    const careerTab = this.mkEl('div', 'sp-tab', '生涯')
     tabs.appendChild(matchTab)
     tabs.appendChild(setTab)
+    tabs.appendChild(careerTab)
     panel.appendChild(tabs)
 
     const cols = this.mkEl('div', 'sp-cols')
     panel.appendChild(cols)
+
+    // ===== 生涯列（#40） =====
+    const careerCol = this.mkEl('div', 'sp-col')
+    cols.appendChild(careerCol)
+    careerCol.style.display = 'none'
+    this.fillCareer(careerCol)
+
+    // tab 切换
+    const showMatch = (): void => {
+      matchTab.classList.add('active')
+      setTab.classList.remove('active')
+      careerTab.classList.remove('active')
+      matchCol.style.display = ''
+      setCol.style.display = 'none'
+      careerCol.style.display = 'none'
+    }
+    const showSettings = (): void => {
+      setTab.classList.add('active')
+      matchTab.classList.remove('active')
+      careerTab.classList.remove('active')
+      setCol.style.display = ''
+      matchCol.style.display = 'none'
+      careerCol.style.display = 'none'
+    }
+    const showCareer = (): void => {
+      careerTab.classList.add('active')
+      matchTab.classList.remove('active')
+      setTab.classList.remove('active')
+      careerCol.style.display = ''
+      matchCol.style.display = 'none'
+      setCol.style.display = 'none'
+      this.fillCareer(careerCol)
+    }
+    matchTab.addEventListener('click', showMatch)
+    setTab.addEventListener('click', showSettings)
+    careerTab.addEventListener('click', showCareer)
 
     // ===== 对局列 =====
     const matchCol = this.mkEl('div', 'sp-col')
@@ -168,6 +208,48 @@ export class MenuUI {
     setCol.appendChild(chColorRow)
     setCol.appendChild(this.mkRange('间距', 0.5, 3, 0.1, s.crosshair.gapScale, (v) => (s.crosshair.gapScale = v)))
 
+    // #42 改键
+    setCol.appendChild(this.mkEl('div', 'sp-sec', '键位（点击改键）'))
+    const BIND_ACTIONS: [string, string][] = [
+      ['forward', '前进'],
+      ['back', '后退'],
+      ['left', '左移'],
+      ['right', '右移'],
+      ['jump', '跳跃'],
+      ['crouch', '蹲伏'],
+      ['walk', '静走'],
+      ['reload', '换弹'],
+      ['buy', '买枪'],
+      ['drop', '丢弃'],
+      ['use', '交互'],
+      ['scoreboard', '记分板'],
+    ]
+    for (const [action, label] of BIND_ACTIONS) {
+      const row = this.mkEl('div', 'sp-row')
+      const lab = this.mkEl('label', '', label)
+      const keyVal = this.mkEl('span', '', s.binds[action] ?? DEFAULT_SETTINGS.binds[action] ?? '-')
+      keyVal.style.opacity = '0.7'
+      keyVal.style.fontSize = '12px'
+      const btn = this.mkEl('button', 'sp-btn', '改')
+      btn.style.padding = '2px 8px'
+      btn.style.fontSize = '11px'
+      btn.addEventListener('click', () => {
+        keyVal.textContent = '按任意键…'
+        const handler = (ev: KeyboardEvent): void => {
+          ev.preventDefault()
+          const code = ev.code === 'Escape' ? DEFAULT_SETTINGS.binds[action] ?? ev.code : ev.code
+          s.binds[action] = code
+          keyVal.textContent = code
+          window.removeEventListener('keydown', handler, true)
+        }
+        window.addEventListener('keydown', handler, true)
+      })
+      row.appendChild(lab)
+      row.appendChild(keyVal)
+      row.appendChild(btn)
+      setCol.appendChild(row)
+    }
+
     setCol.appendChild(this.mkEl('div', 'sp-sec', '其他'))
     const langSel = this.mkSelect('语言', ['中文', 'English'], s.language === 'zh' ? 0 : 1)
     setCol.appendChild(langSel)
@@ -182,23 +264,12 @@ export class MenuUI {
       s.crosshair.color = chColor.value
       s.language = Number(langSel.value) === 0 ? 'zh' : 'en'
       s.teamColors = Number(teamSel.value) === 0 ? 'default' : 'deuteranopia'
+      setLanguage(s.language)
       saveSettings(s)
       this.applySettings()
     })
     setCol.appendChild(applyBtn)
 
-    matchTab.addEventListener('click', () => {
-      matchTab.classList.add('active')
-      setTab.classList.remove('active')
-      matchCol.style.display = ''
-      setCol.style.display = 'none'
-    })
-    setTab.addEventListener('click', () => {
-      setTab.classList.add('active')
-      matchTab.classList.remove('active')
-      setCol.style.display = ''
-      matchCol.style.display = 'none'
-    })
     setCol.style.display = 'none'
     this.root.appendChild(ov)
   }
@@ -206,6 +277,34 @@ export class MenuUI {
   private applySettings(): void {
     // main.ts 注入的实时生效回调
     ;(this.root as HTMLElement & { __onSettingsApplied?: (s: Settings) => void }).__onSettingsApplied?.(this.settingsForms)
+  }
+
+  /** #40 生涯 tab 内容 */
+  private fillCareer(col: HTMLElement): void {
+    col.innerHTML = ''
+    col.appendChild(this.mkEl('div', 'sp-sec', '生涯'))
+    const career = loadCareer()
+    const t = career.totals
+    const winRate = t.games > 0 ? Math.round((t.wins / t.games) * 100) : 0
+    const kd = t.deaths > 0 ? (t.kills / t.deaths).toFixed(2) : String(t.kills)
+    const hsRate = t.kills > 0 ? Math.round((t.hs / t.kills) * 100) : 0
+    const summary = this.mkEl('div', 'sp-row', `总场次 ${t.games} · 胜率 ${winRate}% · K/D ${kd} · 爆头率 ${hsRate}%`)
+    summary.style.fontSize = '12px'
+    summary.style.opacity = '0.8'
+    col.appendChild(summary)
+
+    col.appendChild(this.mkEl('div', 'sp-sec', '最近对局'))
+    const recent = career.matches.slice(-10).reverse()
+    if (recent.length === 0) {
+      col.appendChild(this.mkEl('div', 'sp-row', '暂无记录'))
+      return
+    }
+    for (const m of recent) {
+      const label =
+        m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '平'
+      const row = this.mkEl('div', 'sp-row', `${label} ${m.score[0]}:${m.score[1]} · ${m.mapId} · K${m.k}/D${m.d}`)
+      col.appendChild(row)
+    }
   }
 
   /** #2 暂停菜单 */

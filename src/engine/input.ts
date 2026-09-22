@@ -59,6 +59,22 @@ const EMPTY: InputFrame = {
 
 export const emptyInput = (): InputFrame => ({ ...EMPTY })
 
+/** 默认键位（与 settings.DEFAULT_BINDS 一致） */
+export const DEFAULT_BINDS: Record<string, string> = {
+  forward: 'KeyW',
+  back: 'KeyS',
+  left: 'KeyA',
+  right: 'KeyD',
+  jump: 'Space',
+  crouch: 'ControlLeft',
+  walk: 'ShiftLeft',
+  reload: 'KeyR',
+  buy: 'KeyB',
+  drop: 'KeyG',
+  use: 'KeyE',
+  scoreboard: 'Tab',
+}
+
 export class InputController {
   private keys = new Set<string>()
   private jumpQueued = false
@@ -72,6 +88,17 @@ export class InputController {
   private mouseDX = 0
   private mouseDY = 0
   private canvas: HTMLCanvasElement | null = null
+  /** #42 改键表（action → code） */
+  private binds: Record<string, string> = { ...DEFAULT_BINDS }
+
+  /** #42 运行时改键（由设置层注入） */
+  setBinds(binds: Record<string, string>): void {
+    this.binds = { ...DEFAULT_BINDS, ...binds }
+  }
+
+  private b(action: string): string {
+    return this.binds[action] ?? DEFAULT_BINDS[action] ?? ''
+  }
 
   get locked(): boolean {
     return this.canvas !== null && document.pointerLockElement === this.canvas
@@ -108,14 +135,14 @@ export class InputController {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.code === 'Space') {
+    if (e.code === this.b('jump')) {
       e.preventDefault()
-      if (!this.keys.has('Space')) this.jumpQueued = true
+      if (!this.keys.has(e.code)) this.jumpQueued = true
     }
-    if (e.code === 'KeyR' && !this.keys.has('KeyR')) this.reloadQueued = true
-    if (e.code === 'KeyB' && !this.keys.has('KeyB')) this.buyQueued = true
-    if (e.code === 'KeyG' && !this.keys.has('KeyG')) this.dropQueued = true
-    if (e.code === 'Tab') e.preventDefault()
+    if (e.code === this.b('reload') && !this.keys.has(e.code)) this.reloadQueued = true
+    if (e.code === this.b('buy') && !this.keys.has(e.code)) this.buyQueued = true
+    if (e.code === this.b('drop') && !this.keys.has(e.code)) this.dropQueued = true
+    if (e.code === this.b('scoreboard')) e.preventDefault()
     if (e.code === 'Digit1' && !this.keys.has('Digit1')) this.switchSlot = 0
     if (e.code === 'Digit2' && !this.keys.has('Digit2')) this.switchSlot = 1
     if (e.code === 'Digit3' && !this.keys.has('Digit3')) this.switchSlot = 2
@@ -159,23 +186,23 @@ export class InputController {
   poll(): InputFrame {
     const k = this.keys
     const frame: InputFrame = {
-      forward: k.has('KeyW') || k.has('ArrowUp') ? 1 : 0,
-      back: k.has('KeyS') || k.has('ArrowDown') ? 1 : 0,
-      left: k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0,
-      right: k.has('KeyD') || k.has('ArrowRight') ? 1 : 0,
+      forward: k.has(this.b('forward')) || k.has('ArrowUp') ? 1 : 0,
+      back: k.has(this.b('back')) || k.has('ArrowDown') ? 1 : 0,
+      left: k.has(this.b('left')) || k.has('ArrowLeft') ? 1 : 0,
+      right: k.has(this.b('right')) || k.has('ArrowRight') ? 1 : 0,
       jumpQueued: this.jumpQueued,
-      jumpHeld: k.has('Space'),
+      jumpHeld: k.has(this.b('jump')),
       fireQueued: this.fireQueued,
       fireHeld: this.fireHeldLocked(),
       reloadQueued: this.reloadQueued,
-      useHeld: k.has('KeyE'),
+      useHeld: k.has(this.b('use')),
       buyQueued: this.buyQueued,
       dropQueued: this.dropQueued,
       aimHeld: this.aimHeldLocked(),
-      scoreboardHeld: k.has('Tab'),
+      scoreboardHeld: k.has(this.b('scoreboard')),
       switchSlot: this.switchSlot,
-      crouch: k.has('ControlLeft') || k.has('ControlRight'),
-      walk: k.has('ShiftLeft') || k.has('ShiftRight'),
+      crouch: k.has(this.b('crouch')) || k.has('ControlRight'),
+      walk: k.has(this.b('walk')) || k.has('ShiftRight'),
       mouseDX: this.mouseDX,
       mouseDY: this.mouseDY,
     }

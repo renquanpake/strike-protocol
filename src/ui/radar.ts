@@ -1,6 +1,15 @@
 import type { GameState } from '../game/state'
 import type { PreppedLevel } from '../game/physics/collision'
 
+/** #42 团队色（默认橙/蓝；色盲模式橙/青，避开红绿轴） */
+let TEAM_COLORS = { T: '#ff9d5c', CT: '#5cc8ff' }
+export function setRadarTeamColors(m: 'default' | 'deuteranopia'): void {
+  TEAM_COLORS =
+    m === 'deuteranopia'
+      ? { T: '#ffb02e', CT: '#00d5e0' }
+      : { T: '#ff9d5c', CT: '#5cc8ff' }
+}
+
 /** 雷达：俯视小地图（Canvas 2D），北朝上（-Z 在上），以本地玩家为中心跟随 */
 export class Radar {
   private ctx: CanvasRenderingContext2D
@@ -68,7 +77,7 @@ export class Radar {
         ctx.fill()
         ctx.restore()
       } else {
-        ctx.fillStyle = p.team === 'T' ? '#6fe07f' : '#ff6f6f'
+        ctx.fillStyle = TEAM_COLORS[p.team === 'T' ? 'T' : 'CT']
         ctx.beginPath()
         ctx.arc(px2, py2, 2, 0, Math.PI * 2)
         ctx.fill()

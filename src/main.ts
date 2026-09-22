@@ -20,7 +20,8 @@ import { buildTextures, loadImageTextures, makeDecalTexture, makeBloodTexture, t
 import { HUD } from './ui/hud'
 import { BuyMenu } from './ui/buymenu'
 import { Scoreboard } from './ui/scoreboard'
-import { Radar } from './ui/radar'
+import { Radar, setRadarTeamColors } from './ui/radar'
+import { setLanguage } from './ui/strings'
 import { ViewModel } from './ui/viewmodel'
 import { MenuUI, buildMatchEndStats, matchOptionsFromCfg } from './ui/menu'
 import { Feedback } from './ui/feedback'
@@ -31,10 +32,33 @@ import { v3 } from './engine/math'
 import { loadSettings, loadMatchConfig, type Settings, type MatchConfig } from './ui/settings'
 import { WEAPONS, newWeaponInstance } from './game/weapons'
 import { activeWeapon } from './game/systems/weapon'
+import { persistMatchEnd, achievementName } from './game/achievements'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const hudRoot = document.getElementById('hud') as HTMLElement
 const radarCanvas = document.getElementById('radar') as HTMLCanvasElement
+
+// #43 错误兜底：WebGL 不可用 / 运行时异常 → #fatal 或 #error-log
+function showFatal(msg: string): void {
+  const el = document.getElementById('fatal')
+  const m = document.getElementById('fatal-msg')
+  if (el) el.style.display = 'flex'
+  if (m) m.textContent = msg
+}
+function logError(msg: string): void {
+  const el = document.getElementById('error-log')
+  if (!el) return
+  el.style.display = 'block'
+  el.textContent += msg + '\n'
+  while (el.textContent.split('\n').length > 6) el.textContent = el.textContent.split('\n').slice(-5).join('\n')
+}
+window.addEventListener('error', (e) => logError(String(e.message)))
+window.addEventListener('unhandledrejection', (e) => logError('promise: ' + String(e.reason)))
+// WebGL 能力检测（renderer 构造前）
+if (!document.createElement('canvas').getContext('webgl2')) {
+  showFatal('当前浏览器不支持 WebGL2，无法渲染 3D 场景。请使用最新版 Chrome / Edge / Firefox。')
+  ;(window as unknown as { __BOOT_FAILED?: boolean }).__BOOT_FAILED = true
+}
 
 let settings: Settings = loadSettings()
 let textures: TextureMap = buildTextures()
@@ -69,9 +93,13 @@ let viewmodel: ViewModel | null = null
 let targetDefs: TargetDef[] = []
 let matchendShown = false
 
-// 渲染器单例（世界对象随对局 resetWorld）
-const renderer = new GameRenderer(canvas, settings.fov)
-renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600)
+// 渲染器（#43：init 内延迟构造，失败显示兜底页）
+let renderer: GameRenderer
+function makeRenderer(): GameRenderer {
+  const r = new GameRenderer(canvas, settings.fov)
+  r.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600)
+  return r
+}
 
 // 弹壳池
 const SHELL_POOL = 24
@@ -272,7 +300,7 @@ events.on('c4PickedUp', (e) => {
 })
 // #41 成就 toast
 events.on('achievement', (e) => {
-  feedback?.toast(`成就解锁：${e.id}`)
+  feedback?.toast(`成就解锁：${achievementName(e.id)}`)
   audio.radioBeep()
 })
 // #11 屏幕震动
@@ -693,6 +721,12 @@ function frame(now: number): void {
   if (st.round.phase === 'matchEnd' && !matchendShown) {
     matchendShown = true
     phase = 'matchend'
+    // #40 生涯 + #41 成就（写入后逐条发 achievement 事件 → toast）
+    const me = st.players[0]
+    const result: 'win' | 'loss' | 'draw' =
+      me.team === st.round.lastWinner ? 'win' : st.round.lastWinner === null ? 'draw' : 'loss'
+    const unlocked = persistMatchEnd(st, result, matchConfig.mapId, matchConfig.mode)
+    for (const id of unlocked) events.emit({ type: 'achievement', id })
     menuUI.showMatchEnd(buildMatchEndStats(st))
   }
 }
@@ -710,7 +744,7 @@ function syncAudioScene(): void {
   }
 }
 
-/** 应用设置（#3/#7/#9/#38）：音量/FOV/画质/灵敏度/准星/小地图 */
+/** 应用设置（#3/#7/#9/#38/#42）：音量/FOV/画质/灵敏度/准星/小地图/语言/色盲 */
 function applySettings(s: Settings): void {
   settings = s
   audio.setMasterVolume(s.volume)
@@ -720,6 +754,10 @@ function applySettings(s: Settings): void {
   renderer.setDprCap(s.resolution)
   feedback?.applyCrosshairSettings(s.crosshair.style, s.crosshair.color, s.crosshair.gapScale)
   feedback?.setMinimapVisible(s.showMinimap)
+  setLanguage(s.language)
+  setRadarTeamColors(s.teamColors)
+  input.setBinds(s.binds)
+  buyMenu?.applyLang()
 }
 
 let menuUI: MenuUI
@@ -833,8 +871,20 @@ function exitToMenu(): void {
 }
 
 async function init(): Promise<void> {
+  if ((window as unknown as { __BOOT_FAILED?: boolean }).__BOOT_FAILED) return
+  // #43：渲染器构造失败（WebGL 上下文创建失败）→ 兜底页
+  try {
+    renderer = makeRenderer()
+  } catch (e) {
+    showFatal('WebGL 渲染器初始化失败：' + String(e))
+    return
+  }
   // 先加载生图表面贴图（失败回退 canvas），再建世界
   await loadImageTextures(textures)
+  // 人物模型（three.js 官方 Soldier「Vanguard」CC 资产；失败回退 character.glb 再退回色块）
+  if (!(await renderer.loadCharacterModel('/models/soldier.glb'))) {
+    await renderer.loadCharacterModel('/models/character.glb')
+  }
   feedback = new Feedback(hudRoot, radarCanvas)
   // 首局：直接进主菜单，背景先渲染一张默认地图
   void startMatch({ ...matchConfig })
@@ -869,13 +919,7 @@ async function init(): Promise<void> {
 }
 
 // 人物模型（three.js 官方 Soldier「Vanguard」CC 资产，含 Idle/Run/Walk；
-// 失败回退 Quaternius character.glb，再失败退回色块人形）
-void (async () => {
-  if (!(await renderer.loadCharacterModel('/models/soldier.glb'))) {
-    await renderer.loadCharacterModel('/models/character.glb')
-  }
-})()
-
+// 失败回退 Quaternius character.glb，再失败退回色块人形）——init 内加载（renderer 就绪后）
 void init()
 
 interface DebugAPI {
@@ -897,7 +941,9 @@ if (import.meta.env.DEV) {
     },
     nav,
     events,
-    renderer,
+    get renderer() {
+      return renderer
+    },
     textures,
     get bulletPool() {
       return bulletPool

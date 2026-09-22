@@ -244,6 +244,65 @@
           transform: none;
         }
       }
+      #fatal {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: #0a0e12;
+        color: #dfe8f0;
+        font-family: 'Courier New', monospace;
+        text-align: center;
+        padding: 24px;
+      }
+      #fatal .box {
+        max-width: 480px;
+        background: rgba(10, 14, 18, 0.97);
+        border: 1px solid rgba(255, 80, 80, 0.5);
+        border-radius: 6px;
+        padding: 26px;
+      }
+      #fatal h1 {
+        color: #ff8a80;
+        font-size: 20px;
+        margin: 0 0 10px;
+      }
+      #fatal p {
+        font-size: 13px;
+        line-height: 1.7;
+        color: rgba(223, 232, 240, 0.8);
+      }
+      #fatal button {
+        margin-top: 14px;
+        background: rgba(140, 200, 255, 0.15);
+        border: 1px solid rgba(140, 200, 255, 0.5);
+        color: #dfe8f0;
+        border-radius: 4px;
+        padding: 9px 22px;
+        font-size: 14px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      #error-log {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        max-width: 320px;
+        max-height: 120px;
+        overflow: auto;
+        font-size: 11px;
+        color: #ff9d94;
+        background: rgba(0, 0, 0, 0.6);
+        border: 1px solid rgba(255, 80, 80, 0.3);
+        border-radius: 3px;
+        padding: 6px 8px;
+        display: none;
+        white-space: pre-wrap;
+        pointer-events: none;
+        z-index: 60;
+      }
       #lock-hint {
         position: absolute;
         left: 50%;
@@ -438,7 +497,15 @@
   </head>
   <body>
     <canvas id="game"></canvas>
-      <div id="hud">
+    <div id="fatal">
+      <div class="box">
+        <h1>无法启动游戏</h1>
+        <p id="fatal-msg"></p>
+        <button id="fatal-retry" onclick="location.reload()">重 试</button>
+      </div>
+    </div>
+    <div id="error-log"></div>
+    <div id="hud">
         <div id="crosshair" data-style="cross">
           <i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-d"></i><i class="ch-c"></i>
         </div>
