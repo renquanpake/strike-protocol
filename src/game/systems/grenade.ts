@@ -139,7 +139,7 @@ function killPlayer(state: GameState, victim: (typeof state.players)[number], at
     state.round.c4.carrierId = null
     state.round.c4.position = v3(victim.position.x, victim.position.y, victim.position.z)
   }
-  events.emit({ type: 'playerKilled', victimId: victim.id, attackerId, weaponId })
+  events.emit({ type: 'playerKilled', victimId: victim.id, attackerId, weaponId, headshot: false })
 }
 
 function detonate(state: GameState, g: (typeof state.grenades)[number], level: PreppedLevel, events: EventBus): void {

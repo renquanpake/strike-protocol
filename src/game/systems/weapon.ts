@@ -33,8 +33,8 @@ function msToTicks(ms: number): number {
   return Math.round((ms / 1000) * CONFIG.tickRate)
 }
 
-/** 纯函数：单发伤害 = 基础伤害 × 部位倍率 × 距离衰减 × 护甲减免 */
-export function shotDamage(def: WeaponDef, part: HitboxPart, dist: number, armor: number): number {
+/** 纯函数：单发伤害 = 基础伤害 × 部位倍率 × 距离衰减 × 护甲减免（#18：头盔减爆头） */
+export function shotDamage(def: WeaponDef, part: HitboxPart, dist: number, armor: number, helmet: boolean = false): number {
   let d = def.damage * CONFIG.hitboxMultipliers[part]
   if (dist > def.falloffStart && def.falloffEnd > def.falloffStart) {
     const t = (dist - def.falloffStart) / (def.falloffEnd - def.falloffStart)
@@ -42,6 +42,9 @@ export function shotDamage(def: WeaponDef, part: HitboxPart, dist: number, armor
     d *= Math.max(def.rangeModifier, factor)
   }
   if (part !== 'head' && armor > 0) {
+    d *= 1 - 0.5 * (1 - def.armorPenetration)
+  }
+  if (part === 'head' && helmet) {
     d *= 1 - 0.5 * (1 - def.armorPenetration)
   }
   return d
@@ -159,7 +162,7 @@ export function fireWeapon(
 
   // 弹道
   const forward = viewForward(p.yaw, p.pitch)
-  const coneDeg = spreadDegrees(p, def) + def.spreadDeg.burstGrow * Math.min(w.burstCount, 10)
+  const coneDeg = spreadDegrees(p, def, p.input.aimHeld) + def.spreadDeg.burstGrow * Math.min(w.burstCount, 10)
   const coneRad = (coneDeg * Math.PI) / 180
   let right = viewRight(p.yaw, p.pitch)
   const fr = forward.x * right.x + forward.y * right.y + forward.z * right.z
@@ -203,8 +206,8 @@ export function fireWeapon(
       const victim = state.players.find((x) => x.id === vid)
       if (!victim || !victim.alive || !hit.part) continue
       const part = hit.part as HitboxPart
-      const dmg = shotDamage(def, part, hit.t, victim.armor)
-      applyPlayerHit(state, p, victim, dmg, def, events)
+      const dmg = shotDamage(def, part, hit.t, victim.armor, victim.helmet)
+      applyPlayerHit(state, p, victim, dmg, def, events, part === 'head')
     } else if (p.id === 0 && !wallHit) {
       // 命中地图墙体（仅本地玩家，供印花投射）
       wallHit = { point: hit.point, normal: hit.normal }
@@ -230,13 +233,18 @@ function applyPlayerHit(
   dmg: number,
   def: WeaponDef,
   events: EventBus,
+  headshot: boolean = false,
 ): void {
   victim.health -= dmg
-  events.emit({ type: 'hit', victimId: victim.id, part: 'body', damage: dmg, attackerId: shooter.id })
+  shooter.damageDealt += dmg
+  events.emit({ type: 'hit', victimId: victim.id, part: headshot ? 'head' : 'body', damage: dmg, attackerId: shooter.id })
   if (victim.health <= 0) {
     victim.alive = false
     victim.deaths += 1
     shooter.kills += 1
+    if (headshot) shooter.headshotKills += 1
+    // 首杀：该玩家本局（tick 内）尚无击杀即为本回合开局击杀——简化用本局首个 kill
+    if (shooter.kills === 1) shooter.firstKills += 1
     grantKillReward(shooter, def.killReward)
     // C4 持有者死亡 → 掉落
     if (state.round.c4.state === 'carried' && state.round.c4.carrierId === victim.id) {
@@ -244,7 +252,7 @@ function applyPlayerHit(
       state.round.c4.carrierId = null
       state.round.c4.position = v3(victim.position.x, victim.position.y, victim.position.z)
     }
-    events.emit({ type: 'playerKilled', victimId: victim.id, attackerId: shooter.id, weaponId: def.id })
+    events.emit({ type: 'playerKilled', victimId: victim.id, attackerId: shooter.id, weaponId: def.id, headshot })
   }
 }
 
@@ -305,8 +313,19 @@ function meleeStrike(state: GameState, p: PlayerEntity, def: WeaponDef, eye: Vec
   }
 }
 
-/** 散布状态锥角（度）：站定 / 移动 / 空中 */
-export function spreadDegrees(p: PlayerEntity, def: WeaponDef): number {
+/** 散布状态锥角（度）：站定 / 移动 / 空中。
+ * #8：有开镜的武器（zoom）——开镜时用 stand 值；未开镜 noscope 加 8° 惩罚。
+ * 无 zoom 武器不受 aiming 影响。 */
+export function spreadDegrees(p: PlayerEntity, def: WeaponDef, aiming: boolean = false): number {
+  if (def.zoom) {
+    if (aiming) {
+      const hspeed = Math.hypot(p.velocity.x, p.velocity.z)
+      if (!p.onGround) return def.spreadDeg.air
+      if (hspeed > CONFIG.movingSpeedThreshold) return def.spreadDeg.move
+      return def.spreadDeg.stand
+    }
+    return def.spreadDeg.stand + 8
+  }
   const hspeed = Math.hypot(p.velocity.x, p.velocity.z)
   if (!p.onGround) return def.spreadDeg.air
   if (hspeed > CONFIG.movingSpeedThreshold) return def.spreadDeg.move

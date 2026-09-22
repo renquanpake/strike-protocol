@@ -64,6 +64,8 @@ export interface PlayerEntity {
   lastGroundedTick: number
   health: number
   armor: number
+  /** #18：头盔（爆头减伤），与 armor 独立 */
+  helmet: boolean
   alive: boolean
   money: number
   kills: number
@@ -71,6 +73,10 @@ export interface PlayerEntity {
   hasKit: boolean
   activeSlot: number
   weapons: WeaponSlots
+  /** 本局统计（#4 结算屏 / #40 生涯）：仅 matchEnd 前累计，回合不重置 */
+  damageDealt: number
+  headshotKills: number
+  firstKills: number
   /** 闪光致盲截止 tick */
   blindUntil: number
   /** 脚步计时（ms 累计，触发 footstep 事件用） */
@@ -100,6 +106,16 @@ export interface RoundState {
   c4: C4State
   /** 半场是否已交换出生区 */
   sidesSwapped: boolean
+  /** #26：加时节数（0=常规时间；每节 3 回合，3:3 平进入下一节） */
+  overtime: number
+}
+
+export interface DroppedWeapon {
+  id: number
+  defId: string
+  position: Vec3
+  ammoMag: number
+  ammoReserve: number
 }
 
 export interface GameState {
@@ -116,6 +132,13 @@ export interface GameState {
   burns: ZoneState[]
   nextGrenadeId: number
   nextZoneId: number
+  /** #44：实际使用种子（随机开局也回写），同种子可复现 */
+  seed: number
+  /** #19：bot 难度 1-10 */
+  difficulty: number
+  /** #27：地面掉落武器（回合结束清空） */
+  droppedWeapons: DroppedWeapon[]
+  nextDropId: number
 }
 
 export function makePlayer(
@@ -142,6 +165,7 @@ export function makePlayer(
     lastGroundedTick: -1,
     health: healthMax,
     armor: 0,
+    helmet: false,
     alive: true,
     money: startMoney,
     kills: 0,
@@ -154,28 +178,69 @@ export function makePlayer(
       knife: newWeaponInstance('knife'),
       grenades: [null, null, null, null],
     },
+    damageDealt: 0,
+    headshotKills: 0,
+    firstKills: 0,
     blindUntil: 0,
     stepTimer: 0,
     input: emptyInput(),
   }
 }
 
+export interface MatchOptions {
+  /** 总 bot 数（默认 9 → 5v5；本地玩家占自己阵营 1 席） */
+  botCount?: number
+  /** 本地玩家阵营（默认 T） */
+  playerSide?: Team
+  /** 本地玩家名（默认 YOU） */
+  playerName?: string
+  /** 随机种子（默认 0x5eed） */
+  rngSeed?: number
+  /** bot 难度 1-10（默认 5） */
+  difficulty?: number
+}
+
+/** #24：bot 名字池（CS 风，无重复） */
+export const BOT_NAMES = [
+  'Blaze', 'Havoc', 'Viper', 'Falcon', 'Dagger',
+  'Ghost', 'Storm', 'Reaper', 'Cobra', 'Wolf',
+  'Raptor', 'Nomad', 'Sable', 'Onyx', 'Fang',
+]
+
 export function createGameState(
   spawnT: Vec3[],
   spawnCT: Vec3[],
   healthMax: number,
   startMoney: number,
-  rngSeed = 0x5eed,
+  optionsOrSeed: number | MatchOptions = 0x5eed,
 ): GameState {
+  const options: MatchOptions =
+    typeof optionsOrSeed === 'number' ? { rngSeed: optionsOrSeed } : optionsOrSeed
+  const botCount = options.botCount ?? 9
+  const playerSide = options.playerSide ?? 'T'
+  const playerName = options.playerName ?? 'YOU'
+  const seed = options.rngSeed ?? 0x5eed
+  const difficulty = options.difficulty ?? 5
+  // 每侧人数 N：ceil((botCount+1)/2)，两侧合计 botCount+1（含本地玩家）
+  const perSide = Math.max(1, Math.ceil((botCount + 1) / 2))
+  const localTeamBots = perSide - 1
+  const enemyBots = Math.max(0, botCount - localTeamBots)
+
   const players: PlayerEntity[] = []
-  // 本地玩家（T，id 0）
-  players.push(makePlayer(0, 'YOU', 'T', false, spawnT[0], healthMax, startMoney))
-  for (let i = 0; i < 4; i++) {
-    players.push(makePlayer(i + 1, `T-${i + 1}`, 'T', true, spawnT[i + 1] ?? spawnT[0], healthMax, startMoney))
+  let nameSeq = 0
+  const takeBotName = (): string => BOT_NAMES[nameSeq++ % BOT_NAMES.length]
+  // 本地玩家（恒 id 0）
+  const localSpawn = playerSide === 'T' ? spawnT[0] : spawnCT[0] ?? spawnT[0]
+  players.push(makePlayer(0, playerName, playerSide, false, localSpawn, healthMax, startMoney))
+  const localBotsSpawn = playerSide === 'T' ? spawnT : spawnCT
+  for (let i = 0; i < localTeamBots; i++) {
+    const sp = localBotsSpawn[i + 1] ?? localBotsSpawn[0]
+    players.push(makePlayer(i + 1, takeBotName(), playerSide, true, sp, healthMax, startMoney))
   }
-  for (let i = 0; i < 5; i++) {
-    const sp = spawnCT[i] ?? spawnCT[0] ?? spawnT[0]
-    players.push(makePlayer(5 + i, `CT-${i + 1}`, 'CT', true, sp, healthMax, startMoney))
+  const enemyBotsSpawn = playerSide === 'T' ? spawnCT : spawnT
+  for (let i = 0; i < enemyBots; i++) {
+    const sp = enemyBotsSpawn[i] ?? enemyBotsSpawn[0] ?? spawnT[0]
+    players.push(makePlayer(players.length, takeBotName(), playerSide === 'T' ? 'CT' : 'T', true, sp, healthMax, startMoney))
   }
   const c4: C4State = {
     state: 'carried',
@@ -200,13 +265,18 @@ export function createGameState(
       lastResult: null,
       c4,
       sidesSwapped: false,
+      overtime: 0,
     },
-    rng: new RngCtor(rngSeed),
+    rng: new RngCtor(seed),
     grenades: [],
     smokes: [],
     burns: [],
     nextGrenadeId: 1,
     nextZoneId: 1,
+    seed,
+    difficulty,
+    droppedWeapons: [],
+    nextDropId: 1,
   }
 }
 

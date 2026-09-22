@@ -41,6 +41,8 @@ export interface WeaponDef {
   /** 近战参数（knife） */
   meleeRange?: number
   meleeDamage?: number
+  /** #8 开镜（ADS）：有则支持右键瞄准。fovs=[单倍镜,双倍镜...]，sensScale 为开镜时灵敏度缩放 */
+  zoom?: { fovs: number[]; sensScale: number }
 }
 
 export const WEAPONS: Record<string, WeaponDef> = {
@@ -200,6 +202,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoilPattern: [[0.02, 0]],
     spreadDeg: { stand: 0.02, move: 0.8, air: 2.0, burstGrow: 0 },
     moveSpeedScale: 0.85,
+    zoom: { fovs: [40, 14], sensScale: 0.3 },
   },
   xm1014: {
     id: 'xm1014',
@@ -302,6 +305,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoilPattern: [[0.015, 0]],
     spreadDeg: { stand: 0.03, move: 1.2, air: 2.5, burstGrow: 0 },
     moveSpeedScale: 0.85,
+    zoom: { fovs: [30], sensScale: 0.5 },
   },
   sawnoff: {
     id: 'sawnoff',

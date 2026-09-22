@@ -1,25 +1,21 @@
 import type { Vec3 } from '../../engine/math'
 import type { Brush, BrushMaterial, LevelDef } from './layout'
 
-const b = (
-  cx: number,
-  cy: number,
-  cz: number,
-  w: number,
-  h: number,
-  d: number,
-  material: BrushMaterial = 'concrete',
-  clip = false,
-  ladder = false,
-  decor = false,
-): Brush => ({
-  min: { x: cx - w / 2, y: cy, z: cz - d / 2 },
-  max: { x: cx + w / 2, y: cy + h, z: cz + d / 2 },
-  material,
-  clip,
-  ladder: ladder || undefined,
-  decor: decor || undefined,
-})
+export type MapId = 'de_sahara'
+
+/** #1/#28：地图注册表。新增地图在此登记 build()，matchLevel(mapId) 按 id 取。 */
+const MAP_BUILDERS: Record<string, () => LevelDef> = {
+  de_sahara: () => buildDeSahara(),
+}
+
+export const AVAILABLE_MAPS: { id: MapId; label: string }[] = [
+  { id: 'de_sahara', label: 'de_sahara（沙漠）' },
+]
+
+export function matchLevel(mapId: MapId = 'de_sahara'): LevelDef {
+  const builder = MAP_BUILDERS[mapId] ?? MAP_BUILDERS['de_sahara']
+  return builder()
+}
 
 /**
  * “de_sahara”——沙二（Dust2）拓扑复刻：
@@ -28,8 +24,28 @@ const b = (
  * 中部高架 catwalk（A 短）上 A 平台；长道含 pit 下沉坑；A 点 goose/车掩体。
  * 玩家高 140u：门洞净空 ≥150u，通道净宽 ≥120u，台阶 ≤32u/级。
  */
-export function matchLevel(): LevelDef {
+function buildDeSahara(): LevelDef {
   const brushes: Brush[] = []
+
+  const b = (
+    cx: number,
+    cy: number,
+    cz: number,
+    w: number,
+    h: number,
+    d: number,
+    material: BrushMaterial = 'concrete',
+    clip = false,
+    ladder = false,
+    decor = false,
+  ): Brush => ({
+    min: { x: cx - w / 2, y: cy, z: cz - d / 2 },
+    max: { x: cx + w / 2, y: cy + h, z: cz + d / 2 },
+    material,
+    clip,
+    ladder: ladder || undefined,
+    decor: decor || undefined,
+  })
 
   const push = (...bs: Brush[]): void => {
     brushes.push(...bs)

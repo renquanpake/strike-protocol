@@ -37,6 +37,18 @@ export class AudioEngine {
   private master: GainNode | null = null
   private noise: AudioBuffer | null = null
   private started = false
+  private initialVolume = 0.7
+
+  /** 设置初始主音量（init 前调用，供 #3 设置层注入） */
+  setInitialVolume(v: number): void {
+    this.initialVolume = v
+  }
+
+  /** 运行时改主音量（0-1），未 init 时仅暂存。 */
+  setMasterVolume(v: number): void {
+    this.initialVolume = v
+    if (this.master) this.master.gain.value = v
+  }
 
   /** 需在用户手势中调用以解锁 AudioContext */
   init(): void {
@@ -49,7 +61,7 @@ export class AudioEngine {
     if (!AC) return
     this.ctx = new AC()
     this.master = this.ctx.createGain()
-    this.master.gain.value = 0.7
+    this.master.gain.value = this.initialVolume
     this.master.connect(this.ctx.destination)
     // 预生成噪声缓冲
     const len = this.ctx.sampleRate * 1

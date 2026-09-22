@@ -30,10 +30,11 @@ export class HUD {
     this.lastTextUpdate = nowMs
     const p = state.players[0]
     const speed = Math.hypot(p.velocity.x, p.velocity.z)
+    const gear = `${p.armor > 0 ? ` AP ${p.armor}` : ''}${p.helmet ? ' [HLM]' : ''}`
     this.statusEl.textContent = [
       `POS ${p.position.x.toFixed(0)} / ${p.position.y.toFixed(0)} / ${p.position.z.toFixed(0)}`,
       `SPD ${speed.toFixed(1)} u/s${p.onGround ? '' : ' (AIR)'}`,
-      `HP ${p.health.toFixed(0)} · GND ${p.onGround ? 'Y' : 'N'} · LAD ${p.onLadder ? 'Y' : 'N'}`,
+      `HP ${p.health.toFixed(0)} · GND ${p.onGround ? 'Y' : 'N'} · LAD ${p.onLadder ? 'Y' : 'N'}${gear}`,
       state.targets.map((t) => `T${t.id} ${t.alive ? t.health.toFixed(0) : '---'}`).join('  '),
     ].join('\n')
     if (this.weaponEl) {
@@ -76,7 +77,8 @@ export function roundLine(state: GameState): string {
   let c4line = ''
   const c4 = r.c4
   if (c4.state === 'carried' && c4.carrierId === p.id) c4line = ' · C4:携带'
+  if (c4.state === 'dropped') c4line = ' · C4:掉落'
   if (c4.state === 'planted') c4line = ` · C4:已安放${c4.defuseProgress > 0 ? ` 拆 ${(c4.defuseProgress * 100).toFixed(0)}%` : ''}`
-
-  return `R${r.roundNumber} ${r.phase.toUpperCase()} ${timer} · T ${r.score.T}:${r.score.CT} CT · $${p.money}${c4line}`
+  const ot = r.overtime > 0 ? ` OT${r.overtime}` : ''
+  return `R${r.roundNumber} ${r.phase.toUpperCase()}${ot} ${timer} · T ${r.score.T}:${r.score.CT} CT · $${p.money}${c4line}`
 }

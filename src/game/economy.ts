@@ -57,6 +57,16 @@ export function buyItem(state: GameState, p: PlayerEntity, itemId: string, event
     events.emit({ type: 'shot', shooterId: p.id, weaponId: 'kit' })
     return true
   }
+  // #18 护甲：kevlar=100 甲；kevlarHelmet=100 甲+头盔（爆头减伤）。已穿可补满。
+  if (itemId === 'kevlar' || itemId === 'kevlarHelmet') {
+    const cost = GEAR_PRICES[itemId]
+    if (p.money < cost) return false
+    p.money -= cost
+    p.armor = 100
+    if (itemId === 'kevlarHelmet') p.helmet = true
+    events.emit({ type: 'shot', shooterId: p.id, weaponId: itemId })
+    return true
+  }
   const def = WEAPONS[itemId]
   if (!def || def.price <= 0) return false
   if (p.money < def.price) return false
@@ -110,4 +120,6 @@ export function resetEquipment(state: GameState): void {
 
 export const GEAR_PRICES: Record<string, number> = {
   kit: 500,
+  kevlar: 650,
+  kevlarHelmet: 1000,
 }

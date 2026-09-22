@@ -65,3 +65,4 @@ STRIKE PROTOCOL 是一款浏览器端第一人称战术射击游戏（FPS Web �
 - [架构设计](./ARCHITECTURE.md) - 系统架构和技术设计
 - [接口定义](./INTERFACES.md) - 模块接口和交互规范
 - [开发指南](./DEVELOPER_GUIDE.md) - 开发环境和规范
+- [任务书](./BACKLOG.md) - 完整化 Backlog 详细版（44 项）：每项含现状文件级分析 / 实现要点步骤 / 验收标准 / 坑位提示；头部附执行 AI 上下文（架构速览、API 接入点、工作流约定、环境坑）

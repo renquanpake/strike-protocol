@@ -11,7 +11,7 @@ export type GameEvent =
     }
   | { type: 'hit'; victimId: number; part: string; damage: number; attackerId: number }
   | { type: 'targetKilled'; victimId: number; weaponId: string }
-  | { type: 'playerKilled'; victimId: number; attackerId: number; weaponId: string }
+  | { type: 'playerKilled'; victimId: number; attackerId: number; weaponId: string; headshot: boolean }
   | { type: 'reloadStarted'; weaponId: string }
   | { type: 'reloadFinished'; weaponId: string }
   | { type: 'roundEnd'; winner: 'T' | 'CT'; reason: string }
@@ -21,6 +21,14 @@ export type GameEvent =
   | { type: 'grenadeExploded'; kind: string; x: number; y: number; z: number }
   | { type: 'c4Beep'; remainingMs: number }
   | { type: 'footstep'; playerId: number; material: string; x: number; y: number; z: number }
+  | { type: 'c4PickedUp'; playerId: number }
+  | {
+      type: 'radio'
+      team: 'T' | 'CT'
+      key: 'bombPlanted' | 'bombDefused' | 'enemySpotted' | 'needBackup' | 'flashOut' | 'niceShot'
+      playerId: number
+    }
+  | { type: 'achievement'; id: string }
 
 export class EventBus {
   private handlers: Record<string, Array<(e: GameEvent) => void>> = {}

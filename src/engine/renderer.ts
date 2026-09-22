@@ -63,6 +63,27 @@ export class GameRenderer {
     this.resize()
   }
 
+  /** #1/#28：清空世界对象（box/grid/target/humanoid/动态/印花），保留相机、灯光、人物模板。
+   * 每次 startMatch 调用后重建。 */
+  resetWorld(): void {
+    this.scene.children.slice().forEach((c) => this.scene.remove(c))
+    this.dynBoxes.clear()
+    this.dynSpheres.clear()
+    this.viewmodels.clear()
+    this.vmGroups.clear()
+    this.humanoids.clear()
+    this.decals = []
+    this.targetMeshes = []
+    this.charAnims.clear()
+    this.charMats.clear()
+  }
+
+  /** 运行时改 FOV（#3 设置层 / #8 开镜共用），调用方自行做逐帧插值。 */
+  setFov(fov: number): void {
+    this.camera.fov = fov
+    this.camera.updateProjectionMatrix()
+  }
+
   configure(sky: number, fogNear: number, fogFar: number, shadowExtent = 900): void {
     this.scene.background = new THREE.Color(sky)
     this.scene.fog = new THREE.Fog(sky, fogNear, fogFar)

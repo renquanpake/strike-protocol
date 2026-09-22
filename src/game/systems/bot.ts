@@ -30,19 +30,55 @@ export interface BotBrain {
   baseAimYaw: number
   baseAimPitch: number
   trackTicks: number
+  /** #22 战术：出发延迟截止 tick（slow 分批） */
+  waitUntilTick: number
+  /** #20：已对本目标投过闪光 */
+  flashTarget: number | null
+  /** #21：本回合投过燃烧瓶 */
+  moloThrown: boolean
+  /** #23：最近无线电 tick */
+  lastRadioTick: number
 }
+
+export type BotTactic = 'rush' | 'default' | 'slow' | 'lurk' | 'aggro' | 'stack'
 
 export interface BotContext {
   brains: Map<number, BotBrain>
   processedRound: number
   sites: { name: 'A' | 'B'; center: Vec3; elevation: number }[]
+  /** #19 难度参数（第 5 档 = 现行基线） */
+  profile: (typeof CONFIG.BOT_DIFFICULTY)[number]
+  /** #22 本回合战术（freeze 时抽签，测试可断言） */
+  tacticT: BotTactic
+  tacticCT: BotTactic
+}
+
+/** #22 战术抽签（纯函数，可单测）：连败提升激进/潜伏概率 */
+export function pickTactic(
+  rng: { float(): number },
+  team: 'T' | 'CT',
+  streak: number,
+): BotTactic {
+  const roll = rng.float()
+  if (team === 'T') {
+    if (streak >= 3 && roll < 0.45) return 'lurk'
+    if (roll < 0.3) return 'rush'
+    if (roll < 0.6) return 'slow'
+    return 'default'
+  }
+  if (streak >= 3 && roll < 0.4) return 'stack'
+  if (roll < 0.3) return 'aggro'
+  return 'default'
 }
 
 export function createBotContext(
   state: GameState,
   sites: { name: 'A' | 'B'; center: Vec3; elevation: number }[],
+  difficulty: number = 5,
 ): BotContext {
   const brains = new Map<number, BotBrain>()
+  const idx = Math.max(1, Math.min(10, Math.round(difficulty)))
+  const profile = CONFIG.BOT_DIFFICULTY[idx - 1]
   for (const p of state.players) {
     if (p.isBot) {
       brains.set(p.id, {
@@ -61,10 +97,14 @@ export function createBotContext(
         baseAimYaw: 0,
         baseAimPitch: 0,
         trackTicks: 0,
+        waitUntilTick: 0,
+        flashTarget: null,
+        moloThrown: false,
+        lastRadioTick: 0,
       })
     }
   }
-  return { brains, processedRound: -1, sites }
+  return { brains, processedRound: -1, sites, profile, tacticT: 'default', tacticCT: 'default' }
 }
 
 function gauss(rng: { float(): number }): number {
@@ -94,8 +134,10 @@ export function updateBots(
   dt: number,
 ): void {
   const r = state.round
-  // 新回合：目标分配 + 经济决策
+  // 新回合：战术抽签 + 目标分配 + 经济决策
   if (r.phase === 'freeze' && r.roundNumber !== ctx.processedRound) {
+    ctx.tacticT = pickTactic(state.rng, 'T', r.lossStreak.T)
+    ctx.tacticCT = pickTactic(state.rng, 'CT', r.lossStreak.CT)
     assignObjectives(state, ctx)
     botEconomy(state, events)
     ctx.processedRound = r.roundNumber
@@ -109,6 +151,27 @@ export function updateBots(
       brain.path = null
     }
   }
+  // #25 残局：时间所剩无几且 C4 未安放 → T bot 强冲最近爆点下包
+  if (r.phase === 'live' && r.c4.state === 'carried' && r.c4.carrierId !== null) {
+    const remainingSec = Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate
+    if (remainingSec < 20) {
+      for (const p of state.players) {
+        if (!p.isBot || p.team !== 'T') continue
+        const brain = ctx.brains.get(p.id)!
+        let best = ctx.sites[0]
+        let bd = Infinity
+        for (const s of ctx.sites) {
+          const d = Math.hypot(s.center.x - p.position.x, s.center.z - p.position.z)
+          if (d < bd) {
+            bd = d
+            best = s
+          }
+        }
+        brain.objective = v3(best.center.x, best.elevation, best.center.z)
+        brain.path = null
+      }
+    }
+  }
 
   const tick = state.tick
   for (const p of state.players) {
@@ -120,10 +183,23 @@ export function updateBots(
     const brain = ctx.brains.get(p.id)
     if (!brain) continue
     const rng = state.rng
+    const profile = ctx.profile
 
-    const enemy = perceiveEnemy(state, level, p, brain)
+    // #22 战术延迟：出发前原地待命
+    if (tick < brain.waitUntilTick) {
+      p.input = emptyInput()
+      continue
+    }
+
+    const enemy = perceiveEnemy(state, level, p, brain, profile)
     if (enemy === null) brain.perceivedId = null
-    const engaging = enemy !== null && tick >= brain.reactionUntil
+    // #25 残局：CT 持钳者正在拆除（贴 C4）时不交战，优先 defuse
+    const defusing =
+      p.team === 'CT' &&
+      p.hasKit &&
+      state.round.c4.state === 'planted' &&
+      dist2D(p.position, state.round.c4.position) <= 45
+    const engaging = enemy !== null && tick >= brain.reactionUntil && !defusing
 
     let inp: InputFrame = emptyInput()
 
@@ -138,8 +214,9 @@ export function updateBots(
       const dist = Math.max(1, Math.hypot(dx, dy, dz))
 
       // 换目标时锁定基础误差；持续跟踪则误差按时间常数收敛（越瞄越准）
+      // #19：sigma0 / tau 按难度档缩放
       if (brain.targetId !== enemy.id) {
-        const sigma0 = 0.02 + 0.00012 * dist
+        const sigma0 = (0.02 + 0.00012 * dist) * profile.sigmaMul
         brain.baseAimYaw = gauss(rng) * sigma0
         brain.baseAimPitch = gauss(rng) * sigma0 * 0.6
         brain.trackTicks = 0
@@ -147,7 +224,7 @@ export function updateBots(
       } else {
         brain.trackTicks += 1
       }
-      const errFactor = Math.exp(-brain.trackTicks / CONFIG.botAimTauTicks) * (blinded ? 6 : 1)
+      const errFactor = Math.exp(-brain.trackTicks / (CONFIG.botAimTauTicks * profile.tauMul)) * (blinded ? 6 : 1)
       // 狙击手盯得稳：误差减半
       const curW = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
       const sniperAim = curW ? WEAPONS[curW.defId].category === 'sniper' : false
@@ -161,14 +238,16 @@ export function updateBots(
       p.yaw += Math.max(-turnCap, Math.min(turnCap, dyaw))
       const dpitch = desiredPitch - p.pitch
       p.pitch += Math.max(-turnCap, Math.min(turnCap, dpitch))
-      // 交战走位：周期切换侧移
-      const toRight = Math.floor(tick / 32) % 2 === 0
+      // 交战走位：周期切换侧移（#19：周期按难度）
+      const toRight = Math.floor(tick / profile.strafePeriod) % 2 === 0
       if (toRight) inp.right = 1
       else inp.left = 1
       // 开火（被致盲不开火；非狙击枪超射程不开火）
       if (!blinded && curW) {
         const def = WEAPONS[curW.defId]
         const inRange = def.category === 'sniper' || dist <= CONFIG.botHoldFireRange
+        // #8：bot 狙击交火时开镜（获得 ADS 精度与低散布）
+        inp.aimHeld = def.category === 'sniper' && curW.ammoMag > 0 && curW.reloadUntilTick === 0
         if (def && curW.ammoMag > 0 && curW.reloadUntilTick === 0 && inRange) {
           if (def.auto) {
             inp.fireHeld = true
@@ -186,6 +265,15 @@ export function updateBots(
         he.ammoMag -= 1
         brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
       }
+      // #20：首次发现目标且距离 <500 时投闪光（限频：同目标只投一次）
+      const flash = p.weapons.grenades[1]
+      if (flash && flash.ammoMag > 0 && brain.flashTarget !== enemy.id && tick >= brain.nextThrowTick && dist < 500) {
+        const fy = Math.max(0.25, dy / dist)
+        throwGrenade(state, p, 'flash', { x: p.position.x, y: p.position.y + 40, z: p.position.z }, v3(dx / dist, fy, dz / dist), events)
+        flash.ammoMag -= 1
+        brain.flashTarget = enemy.id
+        brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
+      }
       const smoke = p.weapons.grenades[2]
       const c4 = state.round.c4
       if (p.team === 'CT' && smoke && smoke.ammoMag > 0 && c4.state === 'planted' && !brain.smokedThisRound && tick >= brain.nextThrowTick) {
@@ -196,6 +284,11 @@ export function updateBots(
         smoke.ammoMag -= 1
         brain.smokedThisRound = true
         brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
+      }
+      // #23 无线电：首次发现敌人（限频 10s/人）
+      if (tick - brain.lastRadioTick > 10 * CONFIG.tickRate && dist < 300) {
+        brain.lastRadioTick = tick
+        events.emit({ type: 'radio', team: p.team, key: 'enemySpotted', playerId: p.id })
       }
     } else {
       brain.targetId = null
@@ -220,7 +313,15 @@ export function updateBots(
         const turnCap = 3 * dt
         p.yaw += Math.max(-turnCap, Math.min(turnCap, diw))
         p.pitch = 0
-        // CT 持钳者靠近 C4 拆除
+        // #21：CT 守点投燃烧瓶（每回合 1 颗，朝守点前沿）
+        const molo = p.weapons.grenades[3]
+        if (p.team === 'CT' && molo && molo.ammoMag > 0 && !brain.moloThrown && tick >= brain.nextThrowTick) {
+          const mdir = v3(-Math.sin(brain.idleYaw), 0.15, -Math.cos(brain.idleYaw))
+          throwGrenade(state, p, 'molotov', { x: p.position.x, y: p.position.y + 40, z: p.position.z }, mdir, events)
+          molo.ammoMag -= 1
+          brain.moloThrown = true
+        }
+        // CT 持钳者靠近 C4 拆除（#25：拆除时优先，不交战）
         const c4 = state.round.c4
         if (c4.state === 'planted' && p.team === 'CT' && p.hasKit && dist2D(p.position, c4.position) <= 40) {
           inp.useHeld = true
@@ -268,10 +369,16 @@ function moveInput(p: PlayerEntity, dir: Vec3, inp: InputFrame, dt: number): Inp
   return inp
 }
 
-/** 感知：最近 LOS 可见敌人（100° 前向视野 + 480u 射程） */
-function perceiveEnemy(state: GameState, level: PreppedLevel, p: PlayerEntity, brain: BotBrain): PlayerEntity | null {
+/** 感知：最近 LOS 可见敌人（前向视野 + 难度感知距离） */
+function perceiveEnemy(
+  state: GameState,
+  level: PreppedLevel,
+  p: PlayerEntity,
+  brain: BotBrain,
+  profile: BotContext['profile'],
+): PlayerEntity | null {
   const eye = { x: p.position.x, y: p.position.y + CONFIG.eyeHeight, z: p.position.z }
-  const range = 480
+  const range = profile.viewRange
   let best: PlayerEntity | null = null
   let bestDist = Infinity
   const boxes = level.solids.map((b, i) => ({ id: `b${i}`, min: b.min, max: b.max }))
@@ -292,10 +399,12 @@ function perceiveEnemy(state: GameState, level: PreppedLevel, p: PlayerEntity, b
     if (dotf < -0.34) continue
     // 烟雾遮蔽：LOS 中点冒烟则视为不可见
     if (inSmoke(state, (eye.x + chest.x) / 2, (eye.y + chest.y) / 2, (eye.z + chest.z) / 2)) continue
-    // 反应窗口仅在感知目标变化时重置，避免每 tick 反复推迟开火
+    // 反应窗口仅在感知目标变化时重置，避免每 tick 反复推迟开火（#19：窗口按难度）
     if (brain.perceivedId !== e.id) {
       brain.perceivedId = e.id
-      brain.reactionUntil = state.tick + Math.round(((200 + state.rng.float() * 200) / 1000) * CONFIG.tickRate)
+      const [rMin, rMax] = profile.reactionMs
+      brain.reactionUntil =
+        state.tick + Math.round(((rMin + state.rng.float() * (rMax - rMin)) / 1000) * CONFIG.tickRate)
     }
     best = e
     bestDist = dist
@@ -303,37 +412,63 @@ function perceiveEnemy(state: GameState, level: PreppedLevel, p: PlayerEntity, b
   return best
 }
 
-/** 目标分配：T 攻 A/B，CT 守 A/B/中路 */
+/** 目标分配：按战术抽签（#22）——T：rush/default/slow/lurk；CT：aggro/stack/default */
 function assignObjectives(state: GameState, ctx: BotContext): void {
   const [siteA, siteB] = ctx.sites
   const tBots = state.players.filter((x) => x.isBot && x.team === 'T')
   const ctBots = state.players.filter((x) => x.isBot && x.team === 'CT')
   tBots.forEach((p, i) => {
     const brain = ctx.brains.get(p.id)!
-    const target = i % 3 === 2 ? siteB : siteA
+    const tactic = ctx.tacticT
+    let target = siteA
+    if (tactic === 'lurk' && i === 0) target = siteB // 1 人潜伏绕 B
+    else if (i % 3 === 2 && tactic !== 'rush' && tactic !== 'lurk') target = siteB
     brain.objective = v3(target.center.x, target.elevation, target.center.z)
     brain.idleYaw = Math.PI // T 守点面朝 +Z（CT 回防方向）
     brain.path = null
     brain.reactionUntil = 0
     brain.targetId = null
     brain.smokedThisRound = false
+    brain.flashTarget = null
+    brain.moloThrown = false
+    brain.waitUntilTick =
+      tactic === 'slow'
+        ? state.tick + Math.round(((3000 + state.rng.float() * 5000) / 1000) * CONFIG.tickRate)
+        : 0
     brain.nextThrowTick = Math.round(3 * CONFIG.tickRate) // 开局 3s 后才允许投掷
   })
   ctBots.forEach((p, i) => {
     const brain = ctx.brains.get(p.id)!
-    if (i === 4) {
-      brain.objective = v3(0, 0, -100)
-      brain.idleYaw = Math.PI // 中路游 walker 面朝 +Z（T 来向）
+    const tactic = ctx.tacticCT
+    if (tactic === 'aggro' && i < 2) {
+      // 前压 2 人进中路
+      brain.objective = v3(0, 0, -100 + i * 120)
+      brain.idleYaw = Math.PI
+    } else if (tactic === 'stack') {
+      // 连败堆 A：3 人 A、其余 B（简化 3+2 分配，i 越界回落到 B）
+      brain.objective =
+        i < 3
+          ? v3(siteA.center.x + (i % 2 === 0 ? -60 : 60), siteA.elevation, siteA.center.z)
+          : v3(siteB.center.x + (i % 2 === 0 ? -60 : 60), siteB.elevation, siteB.center.z)
+      brain.idleYaw = i < 3 ? -Math.PI / 2 : Math.PI / 2
     } else {
-      const target = i < 2 ? siteA : siteB
-      brain.objective = v3(target.center.x + (i % 2 === 0 ? -60 : 60), target.elevation, target.center.z)
-      // CT 守点：A 点朝 +X（左翼通道），B 点朝 -X（右翼通道）
-      brain.idleYaw = i < 2 ? -Math.PI / 2 : Math.PI / 2
+      // default / aggro 其余人：2A / 2B / 1 中路
+      if (i >= ctBots.length - 1 && ctBots.length <= 5 && i === 4) {
+        brain.objective = v3(0, 0, -100)
+        brain.idleYaw = Math.PI
+      } else {
+        const target = i < 2 ? siteA : siteB
+        brain.objective = v3(target.center.x + (i % 2 === 0 ? -60 : 60), target.elevation, target.center.z)
+        brain.idleYaw = i < 2 ? -Math.PI / 2 : Math.PI / 2
+      }
     }
     brain.path = null
     brain.reactionUntil = 0
     brain.targetId = null
     brain.smokedThisRound = false
+    brain.flashTarget = null
+    brain.moloThrown = false
+    brain.waitUntilTick = 0
     brain.nextThrowTick = Math.round(3 * CONFIG.tickRate)
   })
 }
@@ -358,11 +493,17 @@ function botEconomy(state: GameState, events: EventBus): void {
     } else if (wantForce && p.money >= WEAPONS.awp.price) {
       buyItem(state, p, 'awp', events)
     }
-    // 投掷物：T 买高爆+烟雾，CT 买烟雾+燃烧
+    // #18 护甲：钱富余时购买（连败后优先保甲）
+    if (p.armor === 0 && (wantForce || p.money >= 4000) && p.money >= 1650) {
+      buyItem(state, p, 'kevlarHelmet', events)
+    }
+    // 投掷物：T 买高爆+闪光+烟雾，CT 买闪光+烟雾+燃烧
     if (p.team === 'T') {
       if (!p.weapons.grenades[0] && p.money >= WEAPONS.he.price) buyItem(state, p, 'he', events)
+      if (!p.weapons.grenades[1] && p.money >= WEAPONS.flash.price) buyItem(state, p, 'flash', events)
       if (!p.weapons.grenades[2] && p.money >= WEAPONS.smoke.price) buyItem(state, p, 'smoke', events)
     } else {
+      if (!p.weapons.grenades[1] && p.money >= WEAPONS.flash.price) buyItem(state, p, 'flash', events)
       if (!p.weapons.grenades[2] && p.money >= WEAPONS.smoke.price) buyItem(state, p, 'smoke', events)
       if (!p.weapons.grenades[3] && p.money >= WEAPONS.molotov.price) buyItem(state, p, 'molotov', events)
     }

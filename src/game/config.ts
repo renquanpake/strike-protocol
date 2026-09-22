@@ -61,6 +61,20 @@ export const CONFIG = {
   movingSpeedThreshold: 30, // u/s：超过即视为移动态散布
   botHoldFireRange: 350, // Bot 不开火的最大距离（狙击枪除外）
   botAimTauTicks: 192, // 瞄准收敛时间常数（tick，约 3s）
+  /** 难度表 1-10 档（#19 消费）：反应窗口 [min,max] ms / 瞄准误差乘数 / 收敛时间常数乘数 / 感知距离 u / 走位周期 tick。
+   * 第 5 档 = 现行参数（回归基线：reaction [200,400]、sigmaMul 1、tauMul 1、viewRange 480、strafePeriod 32）。 */
+  BOT_DIFFICULTY: [
+    { reactionMs: [650, 950], sigmaMul: 2.2, tauMul: 1.6, viewRange: 340, strafePeriod: 64 },
+    { reactionMs: [560, 840], sigmaMul: 1.9, tauMul: 1.45, viewRange: 370, strafePeriod: 56 },
+    { reactionMs: [480, 740], sigmaMul: 1.7, tauMul: 1.35, viewRange: 400, strafePeriod: 48 },
+    { reactionMs: [390, 620], sigmaMul: 1.45, tauMul: 1.2, viewRange: 430, strafePeriod: 40 },
+    { reactionMs: [200, 400], sigmaMul: 1, tauMul: 1, viewRange: 480, strafePeriod: 32 },
+    { reactionMs: [180, 340], sigmaMul: 0.85, tauMul: 0.9, viewRange: 510, strafePeriod: 28 },
+    { reactionMs: [160, 300], sigmaMul: 0.72, tauMul: 0.8, viewRange: 540, strafePeriod: 26 },
+    { reactionMs: [140, 260], sigmaMul: 0.6, tauMul: 0.7, viewRange: 580, strafePeriod: 24 },
+    { reactionMs: [120, 220], sigmaMul: 0.48, tauMul: 0.6, viewRange: 620, strafePeriod: 22 },
+    { reactionMs: [90, 180], sigmaMul: 0.38, tauMul: 0.5, viewRange: 680, strafePeriod: 20 },
+  ] as const,
   hitboxMultipliers: {
     head: 4,
     chest: 1,

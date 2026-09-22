@@ -44,7 +44,16 @@ const SECTIONS: { title: string; items: BuyItem[] }[] = [
   },
   {
     title: '装备',
-    items: [{ id: 'kit', label: '拆弹钳', price: GEAR_PRICES.kit, owned: (p: PlayerEntity) => p.hasKit }],
+    items: [
+      { id: 'kevlar', label: '防弹衣', price: GEAR_PRICES.kevlar, owned: (p: PlayerEntity) => p.armor >= 100 },
+      {
+        id: 'kevlarHelmet',
+        label: '防弹衣+头盔',
+        price: GEAR_PRICES.kevlarHelmet,
+        owned: (p: PlayerEntity) => p.armor >= 100 && p.helmet,
+      },
+      { id: 'kit', label: '拆弹钳', price: GEAR_PRICES.kit, owned: (p: PlayerEntity) => p.hasKit },
+    ],
   },
 ]
 

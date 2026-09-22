@@ -2,10 +2,18 @@ import { CONFIG } from '../config'
 import type { GameState, PlayerEntity } from '../state'
 import { collideBrushes, overlapLadder, type PreppedLevel } from '../physics/collision'
 import type { EventBus } from '../../engine/eventbus'
+import { activeWeapon } from './weapon'
+import { WEAPONS } from '../weapons'
 
 /** bhop 自动起跳窗口（tick）：落地后 N tick 内仍按住跳跃键则再起跳 */
 function bhopWindowTicks(): number {
   return Math.max(1, Math.round((CONFIG.bhopWindowMs / 1000) * CONFIG.tickRate))
+}
+
+/** #3 设置层：鼠标灵敏度倍率（默认 1 = CONFIG.mouseSens 原值），由 main.ts 应用设置时注入 */
+let mouseSensScale = 1
+export function setMouseSensScale(v: number): void {
+  mouseSensScale = v
 }
 
 /**
@@ -21,20 +29,27 @@ export function updatePlayerMovement(
 ): void {
   const inp = p.input
 
+  // #8 ADS：开镜武器右键瞄准时降敏 + 减速
+  const activeW = activeWeapon(p)
+  const zoomDef = activeW ? WEAPONS[activeW.defId].zoom : undefined
+  const aiming = inp.aimHeld && !!zoomDef
+  const sensScale = aiming ? (zoomDef as { sensScale: number }).sensScale : 1
+
   // 视角
-  p.yaw -= inp.mouseDX * CONFIG.mouseSens
-  p.pitch -= inp.mouseDY * CONFIG.mouseSens
+  p.yaw -= inp.mouseDX * CONFIG.mouseSens * mouseSensScale * sensScale
+  p.pitch -= inp.mouseDY * CONFIG.mouseSens * mouseSensScale * sensScale
   const pitchLimit = Math.PI / 2 - 0.01
   p.pitch = Math.min(pitchLimit, Math.max(-pitchLimit, p.pitch))
 
   // 蹲
   p.crouching = inp.crouch
   const height = p.crouching ? CONFIG.crouchHeight : CONFIG.playerHeight
-  const wishSpeed = p.crouching
+  let wishSpeed = p.crouching
     ? CONFIG.duckSpeed
     : inp.walk
       ? CONFIG.walkSpeed
       : CONFIG.moveMaxSpeed
+  if (aiming) wishSpeed *= 0.4
 
   // 期望方向（相对视角）
   const fx = -Math.sin(p.yaw)

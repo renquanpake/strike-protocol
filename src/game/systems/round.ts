@@ -1,5 +1,5 @@
 import { CONFIG } from '../config'
-import type { GameState } from '../state'
+import type { GameState, PlayerEntity } from '../state'
 import { teamPlayers } from '../state'
 import type { PreppedLevel } from '../physics/collision'
 import type { EventBus } from '../../engine/eventbus'
@@ -8,6 +8,12 @@ import type { Team } from '../types'
 
 function msToTicks(ms: number): number {
   return Math.round((ms / 1000) * CONFIG.tickRate)
+}
+
+function teamIndexOf(state: GameState, p: PlayerEntity): number {
+  const mates = teamPlayers(state, p.team)
+  const i = mates.findIndex((m) => m.id === p.id)
+  return i < 0 ? 0 : i
 }
 
 /** 出生点（半场换边后互换） */
@@ -33,7 +39,7 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
     position: { x: 0, y: 0, z: 0 },
   }
   for (const p of state.players) {
-    const sp = teamSpawn(state, level, p.team, p.id % 5)
+    const sp = teamSpawn(state, level, p.team, teamIndexOf(state, p))
     p.position = { x: sp.x, y: sp.y + 40, z: sp.z }
     p.velocity = { x: 0, y: 0, z: 0 }
     p.yaw = sp.z > 0 ? 0 : Math.PI
@@ -41,6 +47,7 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
     p.alive = true
     p.health = CONFIG.healthMax
     p.armor = 0
+    p.helmet = false
     p.onGround = false
     p.onLadder = false
     p.crouching = false
@@ -51,6 +58,7 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
   state.grenades = []
   state.smokes = []
   state.burns = []
+  state.droppedWeapons = []
   resetEquipment(state)
   // C4 交给 T 侧存活随机一人（M3：本地玩家）
   r.c4.carrierId = 0
@@ -66,17 +74,34 @@ function endRound(state: GameState, winner: Team, result: 'elimination' | 'timeo
   if (winner === 'T' && r.c4.state === 'planted' && result === 'defuse') r.c4.state = 'defused'
   if (result === 'bomb') r.c4.state = 'exploded'
   settleRoundEconomy(state)
-  if (r.score[winner] >= CONFIG.winRounds) {
+
+  // #26 加时 MR3：常规 30 回合（15+15）无人到 16 → 进入加时（overtime=1）。
+  const otRounds = r.roundNumber - 30
+  if (r.overtime === 0 && r.roundNumber >= 30 && r.score.T < CONFIG.winRounds && r.score.CT < CONFIG.winRounds) {
+    r.overtime = 1
+  }
+  const winThreshold = CONFIG.winRounds + r.overtime * 3
+
+  // 常规胜：分数到阈值（常规 16；加时节 19/22/...）
+  if (r.score[winner] >= winThreshold) {
     r.phase = 'matchEnd'
     r.phaseEndTick = Infinity
-  } else if (r.roundNumber >= 15 && r.roundNumber % 15 === 0) {
+    return
+  }
+  // 半场（仅常规时间）
+  if (r.overtime === 0 && r.roundNumber >= 15 && r.roundNumber % 15 === 0) {
     r.phase = 'halftime'
     r.phaseEndTick = state.tick + msToTicks(CONFIG.halftimeMs)
     r.sidesSwapped = !r.sidesSwapped
-  } else {
-    r.phase = 'roundEnd'
-    r.phaseEndTick = state.tick + msToTicks(CONFIG.roundEndMs)
+    return
   }
+  // 加时节内：每 3 回合换边；节末 3:3（同分）→ 进入下一节（阈值 +3）
+  if (r.overtime > 0 && otRounds > 0 && otRounds % 3 === 0) {
+    r.sidesSwapped = !r.sidesSwapped
+    if (r.score.T === r.score.CT) r.overtime += 1
+  }
+  r.phase = 'roundEnd'
+  r.phaseEndTick = state.tick + msToTicks(CONFIG.roundEndMs)
 }
 
 /** 每 tick 回合状态机 */
@@ -132,6 +157,21 @@ export function updateRound(state: GameState, level: PreppedLevel, events: Event
           }
         } else {
           c4.plantProgress = 0
+        }
+      }
+    }
+    // C4 掉落拾取（#17）：T 侧存活者走近掉落点即拾取
+    if (c4.state === 'dropped') {
+      for (const p of teamPlayers(state, 'T')) {
+        if (!p.alive) continue
+        const dx = p.position.x - c4.position.x
+        const dz = p.position.z - c4.position.z
+        const dy = p.position.y - c4.position.y
+        if (dx * dx + dz * dz <= 40 * 40 && Math.abs(dy) < 60) {
+          c4.state = 'carried'
+          c4.carrierId = p.id
+          events.emit({ type: 'c4PickedUp', playerId: p.id })
+          break
         }
       }
     }

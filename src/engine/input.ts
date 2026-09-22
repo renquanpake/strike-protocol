@@ -21,6 +21,10 @@ export interface InputFrame {
   useHeld: boolean
   /** 买枪菜单开关键（边沿） */
   buyQueued: boolean
+  /** 丢弃装备键（边沿，#27） */
+  dropQueued: boolean
+  /** 右键瞄准按住（#8 ADS） */
+  aimHeld: boolean
   /** 计分板按住 */
   scoreboardHeld: boolean
   /** 切槽按下当帧（0=primary 1=secondary 2=knife），无则为 null */
@@ -43,6 +47,8 @@ const EMPTY: InputFrame = {
   reloadQueued: false,
   useHeld: false,
   buyQueued: false,
+  dropQueued: false,
+  aimHeld: false,
   scoreboardHeld: false,
   switchSlot: null,
   crouch: false,
@@ -60,6 +66,8 @@ export class InputController {
   private fireHeldFlag = false
   private reloadQueued = false
   private buyQueued = false
+  private dropQueued = false
+  private aimHeldFlag = false
   private switchSlot: number | null = null
   private mouseDX = 0
   private mouseDY = 0
@@ -76,6 +84,7 @@ export class InputController {
     document.addEventListener('mousemove', this.onMouseMove)
     document.addEventListener('mousedown', this.onMouseDown)
     document.addEventListener('mouseup', this.onMouseUp)
+    document.addEventListener('contextmenu', this.onContextMenu)
     canvas.addEventListener('click', this.onClick)
   }
 
@@ -89,6 +98,7 @@ export class InputController {
     document.removeEventListener('mousemove', this.onMouseMove)
     document.removeEventListener('mousedown', this.onMouseDown)
     document.removeEventListener('mouseup', this.onMouseUp)
+    document.removeEventListener('contextmenu', this.onContextMenu)
   }
 
   private onClick = (): void => {
@@ -104,6 +114,7 @@ export class InputController {
     }
     if (e.code === 'KeyR' && !this.keys.has('KeyR')) this.reloadQueued = true
     if (e.code === 'KeyB' && !this.keys.has('KeyB')) this.buyQueued = true
+    if (e.code === 'KeyG' && !this.keys.has('KeyG')) this.dropQueued = true
     if (e.code === 'Tab') e.preventDefault()
     if (e.code === 'Digit1' && !this.keys.has('Digit1')) this.switchSlot = 0
     if (e.code === 'Digit2' && !this.keys.has('Digit2')) this.switchSlot = 1
@@ -125,16 +136,23 @@ export class InputController {
     this.mouseDY += e.movementY
   }
 
+  private onContextMenu = (e: Event): void => {
+    if (this.locked) e.preventDefault()
+  }
+
   private onMouseDown = (e: MouseEvent): void => {
     if (!this.locked) return
     if (e.button === 0) {
       this.fireQueued = true
       this.fireHeldFlag = true
+    } else if (e.button === 2) {
+      this.aimHeldFlag = true
     }
   }
 
   private onMouseUp = (e: MouseEvent): void => {
     if (e.button === 0) this.fireHeldFlag = false
+    if (e.button === 2) this.aimHeldFlag = false
   }
 
   /** 每个逻辑 tick 调用一次：读取键位快照并消费鼠标/边沿增量 */
@@ -152,6 +170,8 @@ export class InputController {
       reloadQueued: this.reloadQueued,
       useHeld: k.has('KeyE'),
       buyQueued: this.buyQueued,
+      dropQueued: this.dropQueued,
+      aimHeld: this.aimHeldLocked(),
       scoreboardHeld: k.has('Tab'),
       switchSlot: this.switchSlot,
       crouch: k.has('ControlLeft') || k.has('ControlRight'),
@@ -163,6 +183,7 @@ export class InputController {
     this.fireQueued = false
     this.reloadQueued = false
     this.buyQueued = false
+    this.dropQueued = false
     this.switchSlot = null
     this.mouseDX = 0
     this.mouseDY = 0
@@ -173,5 +194,11 @@ export class InputController {
   private fireHeldLocked(): boolean {
     if (!this.locked) return false
     return this.fireHeldFlag
+  }
+
+  /** 右键按住（仅 pointer lock 期间有效） */
+  private aimHeldLocked(): boolean {
+    if (!this.locked) return false
+    return this.aimHeldFlag
   }
 }
