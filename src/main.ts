@@ -173,6 +173,17 @@ const bloodPos: { x: number; y: number; z: number }[] = Array.from({ length: BLO
 }))
 let bloodSeq = 0
 let bloodPool = -1
+// #35 玻璃碎片池
+const SHARD_POOL = 8
+const shardUntil: number[] = new Array(SHARD_POOL).fill(0)
+const shardPos: { x: number; y: number; z: number }[] = Array.from({ length: SHARD_POOL }, () => ({
+  x: 0,
+  y: -9999,
+  z: 0,
+}))
+let shardSeq = 0
+// #35 玻璃 box 句柄（破碎隐藏 / 回合恢复）
+let glassBoxes: Map<unknown, { visible: boolean }> = new Map()
 // #12 心跳节拍
 let lastBeat = 0
 // #15 观战
@@ -276,6 +287,24 @@ function triggerShake(amp: number, scale: number): void {
   shakeAmp = Math.min(3, amp * scale)
   shakeUntil = performance.now() + 260
 }
+
+// #35 玻璃破碎：音效 + 碎片 + 隐藏玻璃 box
+events.on('glassBreak', (e) => {
+  audio.glassBreak(e.x, e.y, e.z)
+  const si = shardSeq++ % SHARD_POOL
+  shardUntil[si] = performance.now() + 300
+  shardPos[si] = { x: e.x, y: e.y, z: e.z }
+  const st = state
+  if (st && st.brokenGlass.length > 0) {
+    const b = st.brokenGlass[st.brokenGlass.length - 1]
+    const m = glassBoxes.get(b)
+    if (m) m.visible = false
+  }
+})
+// 回合重置：玻璃 box 恢复可见
+events.on('roundEnd', () => {
+  for (const m of glassBoxes.values()) m.visible = true
+})
 
 /** 归一化角度到 [-π, π] */
 function normAngle(a: number): number {
@@ -586,6 +615,13 @@ function frame(now: number): void {
     renderer.updateDynamicSphere(`blood:${i}`, bp.x, bp.y, bp.z, on)
   }
 
+  // #35 玻璃碎片（300ms）
+  for (let i = 0; i < SHARD_POOL; i++) {
+    const on = performance.now() < shardUntil[i]
+    const sp = shardPos[i]
+    renderer.updateDynamicSphere(`shard:${i}`, sp.x, sp.y, sp.z, on)
+  }
+
   // #13 曳光（本地开火命中后 60ms 淡出）
   for (let i = 0; i < TRACER_POOL; i++) {
     const c = tracerCoords[i]
@@ -703,6 +739,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
   // 重建渲染世界
   renderer.resetWorld()
   renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600)
+  renderer.addSkyDome()
   madeDyn.clear()
   for (const s of shells) {
     s.active = false
@@ -711,10 +748,14 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
   viewmodel = new ViewModel(renderer, textures)
   // Blender 高模替换（按枪类逐个接入；失败保留程序化模型）
   void viewmodel.upgradeWithGLB('rifle', '/models/m4.glb', 38, -0.28)
+  glassBoxes = new Map()
   for (const b of level.brushes) {
     if (b.clip) continue
-    renderer.addBox(b.min, b.max, 0xffffff, b.material === 'glass' ? 0.45 : 1, b.material, textures)
+    const mesh = renderer.addBox(b.min, b.max, 0xffffff, b.material === 'glass' ? 0.45 : 1, b.material, textures)
+    if (b.material === 'glass') glassBoxes.set(b, mesh)
   }
+  // #35 碎片池
+  for (let i = 0; i < SHARD_POOL; i++) renderer.addDynamicSphere(`shard:${i}`, 4, 0xbfe8e0)
   targetDefs = state.targets.map((t) => ({
     id: t.id,
     x: t.position.x,

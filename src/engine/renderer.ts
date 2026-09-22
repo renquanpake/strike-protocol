@@ -163,6 +163,55 @@ export class GameRenderer {
     attr.needsUpdate = true
   }
 
+  /** #33 天空盒：渐变天穹（不受雾）+ 太阳斑 + 外围沙丘剪影（沙漠氛围） */
+  addSkyDome(): void {
+    const geo = new THREE.SphereGeometry(9000, 24, 12)
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      fog: false,
+      depthWrite: false,
+      uniforms: {
+        top: { value: new THREE.Color(0x3a6ea8) },
+        horizon: { value: new THREE.Color(0xe8cfa0) },
+      },
+      vertexShader: `
+        varying vec3 vPos;
+        void main() { vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: `
+        uniform vec3 top; uniform vec3 horizon; varying vec3 vPos;
+        void main() {
+          float h = clamp(normalize(vPos).y * 1.6, 0.0, 1.0);
+          gl_FragColor = vec4(mix(horizon, top, h), 1.0);
+        }
+      `,
+    })
+    const dome = new THREE.Mesh(geo, mat)
+    dome.renderOrder = -1
+    this.scene.add(dome)
+    // 太阳亮斑（sprite billboard）
+    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xfff2cc, fog: false }))
+    sun.position.set(4200, 4600, 2400)
+    sun.scale.set(900, 900, 1)
+    this.scene.add(sun)
+    // 外围沙丘剪影（外墙之外的远景色，不受雾）
+    const duneMat = new THREE.MeshBasicMaterial({ color: 0xb09a72, fog: false, transparent: true, opacity: 0.55 })
+    const duneGeo = new THREE.BoxGeometry(1, 1, 1)
+    const dunes: [number, number, number, number, number, number][] = [
+      [0, 60, 5400, 4600, 260, 600],
+      [0, 90, -5400, 4600, 340, 600],
+      [5400, 70, 0, 600, 280, 4400],
+      [-5400, 50, 0, 600, 220, 4400],
+    ]
+    for (const [cx, cy, cz, w, h, d] of dunes) {
+      const m = new THREE.Mesh(duneGeo, duneMat)
+      m.scale.set(w, h, d)
+      m.position.set(cx, cy, cz)
+      m.rotation.y = Math.random() * 0.4
+      this.scene.add(m)
+    }
+  }
+
   /** 运行时改 FOV（#3 设置层 / #8 开镜共用），调用方自行做逐帧插值。 */
   setFov(fov: number): void {
     this.camera.fov = fov
@@ -194,7 +243,7 @@ export class GameRenderer {
     this.scene.add(grid)
   }
 
-  addBox(min: Vec3, max: Vec3, color: number, opacity = 1, material?: string, textures?: TextureMap): void {
+  addBox(min: Vec3, max: Vec3, color: number, opacity = 1, material?: string, textures?: TextureMap): THREE.Mesh {
     const w = max.x - min.x
     const h = max.y - min.y
     const d = max.z - min.z
@@ -214,6 +263,7 @@ export class GameRenderer {
     mesh.castShadow = true
     mesh.receiveShadow = true
     this.scene.add(mesh)
+    return mesh
   }
 
   private targetMeshes: { id: number; group: THREE.Group; parts: THREE.Mesh[]; base: number[] }[] = []
@@ -221,7 +271,16 @@ export class GameRenderer {
   private dynSpheres: Map<string, { mesh: THREE.Mesh }> = new Map()
   private viewmodels: Map<string, THREE.Mesh> = new Map()
   private vmGroups: Map<string, THREE.Group> = new Map()
-  private humanoids: Map<string, { group: THREE.Group; torsoMat: THREE.MeshLambertMaterial }> = new Map()
+  private humanoids: Map<
+    string,
+    {
+      group: THREE.Group
+      torsoMat: THREE.MeshLambertMaterial
+      /** #31 死亡倒地：起始墙钟 ms（0=存活/未倒地），倒下方向 ±1 */
+      fallStart: number
+      fallDir: number
+    }
+  > = new Map()
   private decals: { pool: THREE.Mesh[]; free: number[]; size: number; texture: THREE.Texture }[] = []
 
   // ===== 开源人物模型（Quaternius CC0）：模板 + 每实例动画状态 =====
@@ -516,7 +575,12 @@ export class GameRenderer {
     // 头盔
     add(new THREE.BoxGeometry(20, 10, 20), accentMat, 0, 120, 0)
     this.scene.add(group)
-    this.humanoids.set(id, { group, torsoMat: torso.material as THREE.MeshLambertMaterial })
+    this.humanoids.set(id, {
+      group,
+      torsoMat: torso.material as THREE.MeshLambertMaterial,
+      fallStart: 0,
+      fallDir: Math.random() < 0.5 ? -1 : 1,
+    })
   }
 
   /** 蒙皮人物实例：克隆模板 + 阵营纯色身体 + 头部中性提亮 + idle/jog/death 动画状态 */
@@ -601,29 +665,47 @@ export class GameRenderer {
     this.charAnims.set(id, entry)
     if (idle) idle.play()
     this.scene.add(model)
-    this.humanoids.set(id, { group: model, torsoMat: null as unknown as THREE.MeshLambertMaterial })
+    this.humanoids.set(id, {
+      group: model,
+      torsoMat: null as unknown as THREE.MeshLambertMaterial,
+      fallStart: 0,
+      fallDir: Math.random() < 0.5 ? -1 : 1,
+    })
   }
 
   updateHumanoid(id: string, x: number, y: number, z: number, yaw: number, alive: boolean, flash: boolean, moving = false): void {
     const h = this.humanoids.get(id)
     if (!h) return
     const anim = this.charAnims.get(id)
-    if (anim) {
-      if (!alive) {
-        if (!anim.deathDone && anim.death) {
-          if (anim.current !== 'death') {
-            anim.current = 'death'
-            anim.death.reset()
-            anim.death.play()
-            anim.idle?.stop()
-            anim.move?.stop()
-          }
-        } else {
-          h.group.visible = false
+    const nowMs = performance.now()
+
+    if (!alive) {
+      // #31 死亡倒地：600ms 前扑倒地 + 随机偏航，尸体保留到回合重置
+      if (h.fallStart === 0) h.fallStart = nowMs
+      const p = Math.min(1, (nowMs - h.fallStart) / 600)
+      const ease = 1 - (1 - p) * (1 - p)
+      h.group.visible = true
+      h.group.position.set(x, y, z)
+      h.group.rotation.set((Math.PI / 2) * ease * h.fallDir, yaw + Math.PI, 0)
+      // 蒙皮人物：若含 death 动画则叠加播放（骨级倒地），否则纯组级 topple
+      if (anim && anim.death && !anim.deathDone) {
+        if (anim.current !== 'death') {
+          anim.current = 'death'
+          anim.death.reset()
+          anim.death.play()
+          anim.idle?.stop()
+          anim.move?.stop()
         }
-        return
       }
-      // 复活/新回合：回 idle
+      return
+    }
+
+    // 复活/新回合：复位姿态
+    if (h.fallStart !== 0) {
+      h.fallStart = 0
+      h.group.rotation.set(0, yaw + Math.PI, 0)
+    }
+    if (anim) {
       if (anim.current === 'death') {
         anim.deathDone = false
         anim.death?.stop()
@@ -632,7 +714,7 @@ export class GameRenderer {
       }
       h.group.visible = true
       h.group.position.set(x, y, z)
-      h.group.rotation.y = yaw + Math.PI
+      h.group.rotation.set(0, yaw + Math.PI, 0)
       const want: 'idle' | 'move' = moving && anim.move ? 'move' : 'idle'
       if (want !== anim.current) {
         const from = want === 'move' ? anim.idle : anim.move
@@ -643,10 +725,9 @@ export class GameRenderer {
       }
       return
     }
-    h.group.visible = alive
-    if (!alive) return
+    h.group.visible = true
     h.group.position.set(x, y, z)
-    h.group.rotation.y = yaw + Math.PI
+    h.group.rotation.set(0, yaw + Math.PI, 0)
     h.torsoMat.color.setHex(flash ? 0xffffff : 0xffffff)
   }
 

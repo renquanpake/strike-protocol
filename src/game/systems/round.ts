@@ -59,6 +59,9 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
   state.smokes = []
   state.burns = []
   state.droppedWeapons = []
+  // #35 玻璃恢复（本回合打碎的在回合切换时复原）
+  state.brokenGlass = []
+  level.solids = level.allSolids
   resetEquipment(state)
   // C4 交给 T 侧存活随机一人（M3：本地玩家）
   r.c4.carrierId = 0

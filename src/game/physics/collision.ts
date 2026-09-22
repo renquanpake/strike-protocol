@@ -10,6 +10,8 @@ const LADDER_TOLERANCE = 6
 /** 预处理的地图：实心碰撞体与梯子分离，避免逐 tick 过滤 */
 export interface PreppedLevel {
   solids: Brush[]
+  /** #35 完整 solids 快照（玻璃破坏后可用于恢复） */
+  allSolids: Brush[]
   ladders: Brush[]
   spawns: { T: Vec3[]; CT: Vec3[] }
   sites: SiteDef[]
@@ -26,6 +28,7 @@ export function prepareLevel(level: LevelDef): PreppedLevel {
   }
   return {
     solids,
+    allSolids: [...solids],
     ladders,
     spawns: level.spawns,
     sites: level.sites ?? [],

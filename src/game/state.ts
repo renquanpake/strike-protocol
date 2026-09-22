@@ -8,6 +8,7 @@ import type { WeaponInstance } from './weapons'
 import { newWeaponInstance } from './weapons'
 import type { Target } from './entities/target'
 import type { Team } from './types'
+import type { Brush } from './map/layout'
 
 export type RoundPhase =
   | 'warmup'
@@ -139,6 +140,8 @@ export interface GameState {
   /** #27：地面掉落武器（回合结束清空） */
   droppedWeapons: DroppedWeapon[]
   nextDropId: number
+  /** #35：本回合被打碎的玻璃 brush（回合重置清空并恢复 solids） */
+  brokenGlass: Brush[]
 }
 
 export function makePlayer(
@@ -277,6 +280,7 @@ export function createGameState(
     difficulty,
     droppedWeapons: [],
     nextDropId: 1,
+    brokenGlass: [],
   }
 }
 

@@ -293,6 +293,13 @@ export class AudioEngine {
     if (p.ping > 0) this.tone(p.ping, 0.05, p.gain * 0.4, 'triangle', !isLocal, x, y, z)
   }
 
+  /** #35 玻璃碎裂（高频脆响 + 玻璃 ping） */
+  glassBreak(x: number, y: number, z: number): void {
+    const spatial = Math.hypot(x, z) > 120
+    this.noiseBurst(4500, 'highpass', 0.18, 0.25, spatial, x, y, z)
+    this.tone(2400, 0.12, 0.08, 'triangle', spatial, x, y, z)
+  }
+
   /** 爆炸（HE / C4 / 燃烧瓶） */
   explosion(kind: string, x: number, y: number, z: number): void {
     const big = kind === 'he' || kind === 'c4'

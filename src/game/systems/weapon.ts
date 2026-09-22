@@ -208,6 +208,18 @@ export function fireWeapon(
       const part = hit.part as HitboxPart
       const dmg = shotDamage(def, part, hit.t, victim.armor, victim.helmet)
       applyPlayerHit(state, p, victim, dmg, def, events, part === 'head')
+    } else if (hit.target.startsWith('brush:')) {
+      // #35 玻璃：命中玻璃 brush → 一次性碎裂（物理通行 + 渲染隐藏 + 音效/碎片）
+      const bi = Number(hit.target.split(':').slice(1).join(':'))
+      const b = level.solids[bi]
+      if (b && b.material === 'glass' && !state.brokenGlass.includes(b)) {
+        state.brokenGlass.push(b)
+        level.solids = level.allSolids.filter((x) => x !== b)
+        events.emit({ type: 'glassBreak', x: hit.point.x, y: hit.point.y, z: hit.point.z })
+      }
+      if (p.id === 0 && !wallHit) {
+        wallHit = { point: hit.point, normal: hit.normal }
+      }
     } else if (p.id === 0 && !wallHit) {
       // 命中地图墙体（仅本地玩家，供印花投射）
       wallHit = { point: hit.point, normal: hit.normal }

@@ -22,6 +22,7 @@ export type GameEvent =
   | { type: 'c4Beep'; remainingMs: number }
   | { type: 'footstep'; playerId: number; material: string; x: number; y: number; z: number }
   | { type: 'c4PickedUp'; playerId: number }
+  | { type: 'glassBreak'; x: number; y: number; z: number }
   | {
       type: 'radio'
       team: 'T' | 'CT'
