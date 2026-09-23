@@ -51,6 +51,15 @@
 - Context: Agent 完成 44 项 backlog 全量开发
 - Category: 构建方法
 - Instructions:
-  - 完整化后测试基线从 75 → **79**（`npx vitest run` 全绿为验收线，新增 4 条 de_plaza 路由回归）。
+  - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**（`npx vitest run` 全绿为验收线，16 个测试文件）。
   - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 46 项（models/textures，上限 4MB 因 character.glb 3.25MB）；dev 模式 PWA 不生效。
   - 地图现为 3 张：`de_sahara`（默认）/`de_plaza`（第二张对战图）/`training`（训练场），注册在 `src/game/map/match.ts` 的 `MAP_BUILDERS`；新增图需在该表登记 + routes.test.ts 加路由回归。
+
+### [环境限制: headless 游戏 tick 速约为墙钟 5–7x]
+- Date: 2026-09-23
+- Context: 用 puppeteer+swiftshader 走查游戏做截图/事件断言时（rAF 时间戳漂移）
+- Category: 排障 & 调试
+- Instructions:
+  - 沙箱 headless 下 requestAnimationFrame 时间戳漂移，游戏固定 tick（`CONFIG.tickRate`）跑约 5–7x 墙钟速（实测 40ms 墙钟 ≈ 29 tick）。所有"冷却/淡出/倒计时"类时间窗断言或截图时机要按此换算，或直接按 tick 计数（`state.tick`）而非墙钟 sleep。
+  - 走查脚本（如 `/tmp/opencode/shots.mjs`）里 `sleep(ms)` 后要留足 7x 余量；拾取冷却等常量（60 tick）在 headless 下 ≈130ms 墙钟即过。
+  - `window.__game`（DEV-only）暴露 `state()/tickOnce()/nav/events/renderer/textures/bulletPool/scorchPool/shotPool/input`，可无鼠标驱动走查（`input` 的边沿键 G/R/B 与移动键在 CDP keydown 下生效，但 fireHeld/aimHeld 因无指针锁恒 false）。
