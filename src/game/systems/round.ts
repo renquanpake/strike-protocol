@@ -37,6 +37,7 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
     defuseProgress: 0,
     explodeAtTick: 0,
     position: { x: 0, y: 0, z: 0 },
+    pickupReadyTick: 0,
   }
   for (const p of state.players) {
     const sp = teamSpawn(state, level, p.team, teamIndexOf(state, p))
@@ -77,6 +78,10 @@ function endRound(state: GameState, winner: Team, result: 'elimination' | 'timeo
   if (winner === 'T' && r.c4.state === 'planted' && result === 'defuse') r.c4.state = 'defused'
   if (result === 'bomb') r.c4.state = 'exploded'
   settleRoundEconomy(state)
+  // #41 残局胜：己方（含本地玩家）团灭敌方获胜且己方仅 1 人存活
+  if (winner === state.players[0].team && result === 'elimination' && teamPlayers(state, winner).filter((p) => p.alive).length <= 1) {
+    state.matchStats.myClutch += 1
+  }
 
   // #26 加时 MR3：常规 30 回合（15+15）无人到 16 → 进入加时（overtime=1）。
   const otRounds = r.roundNumber - 30
@@ -159,7 +164,10 @@ export function updateRound(state: GameState, level: PreppedLevel, events: Event
             c4.plantProgress = 0
             c4.explodeAtTick = tick + msToTicks(CONFIG.c4TimerMs)
             c4.position = { x: site.center.x, y: site.elevation, z: site.center.z }
+            state.matchStats.plants += 1
             events.emit({ type: 'bombPlanted', site: site.name })
+            // #23 无线电：T 侧下包播报
+            events.emit({ type: 'radio', team: 'T', key: 'bombPlanted', playerId: carrier.id })
             r.phase = 'bombPlanted'
             r.phaseEndTick = c4.explodeAtTick
           }
@@ -168,8 +176,8 @@ export function updateRound(state: GameState, level: PreppedLevel, events: Event
         }
       }
     }
-    // C4 掉落拾取（#17）：T 侧存活者走近掉落点即拾取
-    if (c4.state === 'dropped') {
+    // C4 掉落拾取（#17）：T 侧存活者走近掉落点即拾取（冷却期内不秒捡）
+    if (c4.state === 'dropped' && state.tick >= c4.pickupReadyTick) {
       for (const p of teamPlayers(state, 'T')) {
         if (!p.alive) continue
         const dx = p.position.x - c4.position.x
@@ -214,6 +222,9 @@ export function updateRound(state: GameState, level: PreppedLevel, events: Event
           const need = p.hasKit ? CONFIG.defuseWithKitMs : CONFIG.defuseMs
           c4.defuseProgress += dt / (need / 1000)
           if (c4.defuseProgress >= 1) {
+            state.matchStats.defuses += 1
+            // #23 无线电：CT 侧拆包播报
+            events.emit({ type: 'radio', team: 'CT', key: 'bombDefused', playerId: p.id })
             endRound(state, 'CT', 'defuse')
             return
           }

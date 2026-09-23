@@ -248,7 +248,7 @@ function applyPlayerHit(
   events: EventBus,
   headshot: boolean = false,
 ): void {
-  victim.health -= dmg
+  victim.health = Math.max(0, victim.health - dmg)
   shooter.damageDealt += dmg
   events.emit({ type: 'hit', victimId: victim.id, part: headshot ? 'head' : 'body', damage: dmg, attackerId: shooter.id })
   if (victim.health <= 0) {
@@ -259,6 +259,14 @@ function applyPlayerHit(
     if (headshot) shooter.headshotKills += 1
     // 首杀：该玩家本局（tick 内）尚无击杀即为本回合开局击杀——简化用本局首个 kill
     if (shooter.kills === 1) shooter.firstKills += 1
+    // #41 成就埋点：击杀距离 / 刀杀 / HE 杀 / 本地玩家武器类别集邮
+    if (shooter.id === 0) {
+      const d = Math.hypot(shooter.position.x - victim.position.x, shooter.position.z - victim.position.z)
+      if (d > state.matchStats.maxKillDist) state.matchStats.maxKillDist = d
+      if (def.category === 'knife') state.matchStats.knifeKills += 1
+      if (def.category === 'grenade' && def.id === 'he') state.matchStats.heKills += 1
+      if (!state.matchStats.killCats.includes(def.category)) state.matchStats.killCats.push(def.category)
+    }
     grantKillReward(shooter, def.killReward)
     // C4 持有者死亡 → 掉落
     if (state.round.c4.state === 'carried' && state.round.c4.carrierId === victim.id) {

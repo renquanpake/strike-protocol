@@ -96,6 +96,8 @@ export interface C4State {
   defuseProgress: number
   explodeAtTick: number
   position: Vec3
+  /** #27 丢包冷却：丢出后 0.16s 内不可被拾取（避免携带者原地秒捡） */
+  pickupReadyTick: number
 }
 
 export interface RoundState {
@@ -119,6 +121,26 @@ export interface DroppedWeapon {
   position: Vec3
   ammoMag: number
   ammoReserve: number
+  /** 拾取冷却截止 tick（丢出后 0.94s 内不可秒捡） */
+  pickupReadyTick: number
+}
+
+/** #41 成就埋点：本局统计（武器.ts / round.ts 写入，成就系统在 matchEnd 判定） */
+export interface MatchStats {
+  /** 本局单次击杀最大距离（A/W P 千里之外） */
+  maxKillDist: number
+  /** 本局拆包成功次数 */
+  defuses: number
+  /** 本局下包次数 */
+  plants: number
+  /** 本局刀杀数（本地玩家视角累计全员的会重复，仅统计 attackerId===0 的） */
+  knifeKills: number
+  /** 本局 HE 雷杀数（同上） */
+  heKills: number
+  /** 本局己方 1vX 残局胜回合数（winner 为己方且己方仅 1 人存活） */
+  myClutch: number
+  /** 本地玩家本局用过的武器类别集（全武器集邮） */
+  killCats: string[]
 }
 
 export interface GameState {
@@ -148,6 +170,8 @@ export interface GameState {
   mode: 'de' | 'dm' | 'tdm'
   /** #37 训练场：无限弹药 / 金钱锁 / 伤害数字 */
   training: boolean
+  /** #41 成就统计埋点 */
+  matchStats: MatchStats
 }
 
 export function makePlayer(
@@ -263,6 +287,7 @@ export function createGameState(
     defuseProgress: 0,
     explodeAtTick: 0,
     position: v3(),
+    pickupReadyTick: 0,
   }
   return {
     tick: 0,
@@ -293,6 +318,15 @@ export function createGameState(
     brokenGlass: [],
     mode,
     training: false,
+    matchStats: {
+      maxKillDist: 0,
+      defuses: 0,
+      plants: 0,
+      knifeKills: 0,
+      heKills: 0,
+      myClutch: 0,
+      killCats: [],
+    },
   }
 }
 

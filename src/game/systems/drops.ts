@@ -23,14 +23,20 @@ export function updateDrops(state: GameState, p: PlayerEntity, events: EventBus)
 
   if (inp.dropQueued) {
     const c4 = state.round.c4
-    // 携包 T 按 G → C4 掉落（与 #17 拾取互通）
+    // 携包 T 按 G → C4 掉落（与 #17 拾取互通；前移 12u + 冷却 60 tick，避免携带者原地秒捡）
     if (c4.state === 'carried' && c4.carrierId === p.id && p.team === 'T') {
+      const fx = -Math.sin(p.yaw)
+      const fz = -Math.cos(p.yaw)
       c4.state = 'dropped'
       c4.carrierId = null
-      c4.position = v3(p.position.x, p.position.y, p.position.z)
+      c4.position = v3(p.position.x + fx * 12, p.position.y + 4, p.position.z + fz * 12)
+      c4.pickupReadyTick = state.tick + 60
       return
     }
-    // 丢弃当前主/副武器
+    // 丢弃当前主/副武器（落点前移 12u + 拾取冷却 60 tick，避免原地秒捡）
+    const fx = -Math.sin(p.yaw)
+    const fz = -Math.cos(p.yaw)
+    const dropAt = v3(p.position.x + fx * 12, p.position.y + 4, p.position.z + fz * 12)
     if (p.activeSlot === 0 && p.weapons.primary) {
       const inst = p.weapons.primary
       p.weapons.primary = null
@@ -38,9 +44,10 @@ export function updateDrops(state: GameState, p: PlayerEntity, events: EventBus)
       state.droppedWeapons.push({
         id: state.nextDropId++,
         defId: inst.defId,
-        position: v3(p.position.x, p.position.y + 4, p.position.z),
+        position: dropAt,
         ammoMag: inst.ammoMag,
         ammoReserve: inst.ammoReserve,
+        pickupReadyTick: state.tick + 60,
       })
       events.emit({ type: 'shot', shooterId: p.id, weaponId: 'drop' })
     } else if (p.activeSlot === 1 && p.weapons.secondary) {
@@ -49,17 +56,19 @@ export function updateDrops(state: GameState, p: PlayerEntity, events: EventBus)
       state.droppedWeapons.push({
         id: state.nextDropId++,
         defId: inst.defId,
-        position: v3(p.position.x, p.position.y + 4, p.position.z),
+        position: dropAt,
         ammoMag: inst.ammoMag,
         ammoReserve: inst.ammoReserve,
+        pickupReadyTick: state.tick + 60,
       })
       events.emit({ type: 'shot', shooterId: p.id, weaponId: 'drop' })
     }
   }
 
-  // 拾取：脚下 40u 内、对应槽位为空的掉落物
+  // 拾取：脚下 40u 内、对应槽位为空的掉落物（冷却结束后）
   for (let i = state.droppedWeapons.length - 1; i >= 0; i--) {
     const drop = state.droppedWeapons[i]
+    if (state.tick < drop.pickupReadyTick) continue
     const dx = p.position.x - drop.position.x
     const dz = p.position.z - drop.position.z
     const dy = p.position.y - drop.position.y

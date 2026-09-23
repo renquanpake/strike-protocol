@@ -493,10 +493,29 @@
       }
       #scoreboard tr.T td:first-child { color: #6fe07f; }
       #scoreboard tr.CT td:first-child { color: #7fb0ff; }
+      /* #6 加载屏 */
+      #loading {
+        position: fixed; inset: 0; z-index: 30;
+        background: #0b0e13;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        color: #cfd8e3;
+        transition: opacity 0.4s ease;
+      }
+      #loading.hidden { opacity: 0; pointer-events: none; }
+      #loading .lg-logo { font-size: 30px; font-weight: 700; letter-spacing: 0.18em; color: #e8eef6; }
+      #loading .lg-logo span { color: #ffd257; }
+      #loading .lg-bar { width: 260px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+      #loading-bar { height: 100%; width: 0%; background: #ffd257; transition: width 0.2s ease; }
+      #loading-status { font-size: 12px; opacity: 0.7; }
     </style>
   </head>
   <body>
     <canvas id="game"></canvas>
+    <div id="loading">
+      <div class="lg-logo">STRIKE PROTOCOL</div>
+      <div class="lg-bar"><div id="loading-bar"></div></div>
+      <div id="loading-status">正在初始化…</div>
+    </div>
     <div id="fatal">
       <div class="box">
         <h1>无法启动游戏</h1>

@@ -27,6 +27,7 @@ import { MenuUI, buildMatchEndStats, matchOptionsFromCfg } from './ui/menu'
 import { Feedback } from './ui/feedback'
 import { AudioEngine } from './engine/audio'
 import { updateShells, spawnShell, type Shell } from './game/particles'
+import { TracerRing, tracerWanted } from './game/tracer'
 import { raycastBoxes } from './game/physics/raycast'
 import { v3 } from './engine/math'
 import { loadSettings, loadMatchConfig, type Settings, type MatchConfig } from './ui/settings'
@@ -124,12 +125,20 @@ function surfaceBelow(x: number, y: number, z: number): import('./game/physics/r
   return raycastBoxes(v3(x, y, z), v3(0, -1, 0), boxes) ?? raycastBoxes(v3(x, y, z), v3(0, 1, 0), boxes)
 }
 
+// #13 曳光：本地玩家弹道（狙击/单发枪每发，自动武器每 3 发一条）
+const shotSeq: Record<string, number> = {}
+events.on('shot', (e) => {
+  if (e.shooterId !== 0 || e.weaponId === 'drop') return
+  shotSeq[e.weaponId] = (shotSeq[e.weaponId] ?? 0) + 1
+})
 events.on('surfaceHit', (e) => {
   if (e.shooterId !== 0) return
   const pool = e.pellets > 1 ? shotPool : bulletPool
   renderer.spawnDecal(pool, e.point, e.normal, e.pellets > 1 ? 2.4 : 1)
-  // #13 曳光：本地玩家弹道可见（枪口 → 落点）
-  if (e.pellets === 1) spawnTracer(e.point)
+  if (e.pellets === 1) {
+    const def = WEAPONS[e.weaponId] ?? { auto: false }
+    if (tracerWanted(shotSeq[e.weaponId] ?? 1, def)) spawnTracer(e.point)
+  }
 })
 const spawnScorch = (x: number, y: number, z: number): void => {
   const hit = surfaceBelow(x, y, z)
@@ -169,7 +178,7 @@ let shakeUntil = 0
 let shakeAmp = 0
 // #13 曳光池
 const TRACER_POOL = 32
-let tracerSeq = 0
+const tracerRing = new TracerRing(TRACER_POOL)
 const tracerUntil: number[] = new Array(TRACER_POOL).fill(0)
 const tracerCoords = Array.from({ length: TRACER_POOL }, () => ({
   x1: 0,
@@ -180,7 +189,7 @@ const tracerCoords = Array.from({ length: TRACER_POOL }, () => ({
   z2: 0,
 }))
 function spawnTracer(to: { x: number; y: number; z: number }): void {
-  const i = tracerSeq++ % TRACER_POOL
+  const i = tracerRing.next()
   tracerCoords[i] = {
     x1: lastShotMuzzle.x,
     y1: lastShotMuzzle.y,
@@ -283,12 +292,17 @@ events.on('playerKilled', (e) => {
   if (e.attackerId === 0) {
     const def = WEAPONS[e.weaponId]
     feedback?.showKillReward(def?.killReward ?? 0, e.headshot)
+  } else if (attacker.alive && st.rng.float() < 0.35) {
+    // #23 无线电：队友击杀随机播报
+    events.emit({ type: 'radio', team: attacker.team, key: 'niceShot', playerId: attacker.id })
   }
 })
-// #23 无线电
+// #23 无线电（只显示本队；敌方事件不播）
 events.on('radio', (e) => {
   const st = state
-  const name = st?.players[e.playerId]?.name ?? '???'
+  if (!st) return
+  if (e.team !== st.players[0].team) return
+  const name = st.players[e.playerId]?.name ?? '???'
   feedback?.addRadio(e.team, e.key, name)
   audio.radioBeep()
 })
@@ -432,6 +446,18 @@ const GREN_COLORS: Record<string, number> = {
 }
 const madeDyn = new Set<string>()
 
+/** #27 掉落武器配色（按武器类） */
+const DROP_COLORS: Record<string, number> = {
+  pistol: 0x9fb0c4,
+  smg: 0x8fa3ad,
+  rifle: 0xc8862a,
+  sniper: 0x3f6fae,
+  shotgun: 0x7a5a3a,
+  lmg: 0x5a5a5a,
+  knife: 0xd0342c,
+  grenade: 0x8a9a5a,
+}
+
 function ensureDyn(key: string): void {
   if (madeDyn.has(key)) return
   madeDyn.add(key)
@@ -439,6 +465,11 @@ function ensureDyn(key: string): void {
   if (key.startsWith('g:')) {
     const g = st?.grenades.find((x) => `g:${x.id}` === key)
     renderer.addDynamicSphere(key, 8, GREN_COLORS[g?.kind ?? 'he'] ?? 0x888888)
+  } else if (key.startsWith('d:')) {
+    // #27 掉落武器：小箱模型按武器类染色
+    const dw = st?.droppedWeapons.find((x) => `d:${x.id}` === key)
+    const cat = dw ? WEAPONS[dw.defId]?.category : undefined
+    renderer.addDynamicBox(key, 18, 6, 18, DROP_COLORS[cat ?? ''] ?? 0x888888)
   } else if (key.startsWith('sm:')) {
     // #32 烟雾 = 粒子云（低画质档减密度）
     renderer.addParticleCloud(key, settings.quality === 'low' ? 24 : 40, 0x9fb4c4, 18)
@@ -455,9 +486,14 @@ function refreshGrenades(): void {
   const liveG = new Set(st.grenades.map((g) => `g:${g.id}`))
   const liveSm = new Set(st.smokes.map((z) => `sm:${z.id}`))
   const liveFn = new Set(st.burns.map((z) => `fn:${z.id}`))
+  const liveD = new Set(st.droppedWeapons.map((w) => `d:${w.id}`))
   for (const g of st.grenades) {
     ensureDyn(`g:${g.id}`)
     renderer.updateDynamicSphere(`g:${g.id}`, g.position.x, g.position.y + 8, g.position.z, true)
+  }
+  for (const w of st.droppedWeapons) {
+    ensureDyn(`d:${w.id}`)
+    renderer.updateDynamicBox(`d:${w.id}`, w.position.x, w.position.y + 3, w.position.z, true)
   }
   for (const z of st.smokes) {
     ensureDyn(`sm:${z.id}`)
@@ -472,10 +508,12 @@ function refreshGrenades(): void {
   for (const key of madeDyn) {
     const alive =
       (key.startsWith('g:') && liveG.has(key)) ||
+      (key.startsWith('d:') && liveD.has(key)) ||
       (key.startsWith('sm:') && liveSm.has(key)) ||
       (key.startsWith('fn:') && liveFn.has(key))
     if (!alive) {
       if (key.startsWith('g:')) renderer.updateDynamicSphere(key, 0, -9999, 0, false)
+      else if (key.startsWith('d:')) renderer.updateDynamicBox(key, 0, -9999, 0, false)
       else if (key.startsWith('sm:')) renderer.updateParticleCloud(key, 0, -9999, 0, 1, false)
       else {
         renderer.updateParticleCloud(key, 0, -9999, 0, 1, false)
@@ -625,14 +663,9 @@ function frame(now: number): void {
   // #9 动态准星（逐帧，散布驱动间距）
   feedback?.updateCrosshair(p, CONFIG.crosshairGapPerDeg, aimActive)
 
-  // #12 低血量：红晕常驻 + 心跳（<30 启动，<15 加密）
+  // #12 低血量心跳（<30 启动 800ms，<15 加密 500ms）；红晕与受击闪在同一处合并计算，避免互相覆盖
   {
     const hp = p.health
-    const dmgEl = document.getElementById('dmg') as HTMLElement | null
-    if (dmgEl) {
-      const lowHp = hp < 30 && p.alive ? (hp < 15 ? 0.4 : 0.22) : 0
-      dmgEl.style.opacity = String(Math.max(lowHp, nowMs2 < dmgUntil ? 0.85 : 0))
-    }
     if (hp < 30 && p.alive) {
       const interval = hp < 15 ? 500 : 800
       if (nowMs2 - lastBeat > interval) {
@@ -684,7 +717,9 @@ function frame(now: number): void {
   }
   const dmgEl = document.getElementById('dmg')
   if (dmgEl) {
-    dmgEl.style.opacity = nowMs < dmgUntil ? '0.85' : '0'
+    // #12 低血量常驻红晕（渐变随 HP）叠加 #10 受击闪红，取两者最大值
+    const lowHp = p.alive && p.health < 30 ? Math.max(0.22, (30 - p.health) / 30 * 0.4) : 0
+    dmgEl.style.opacity = String(Math.max(lowHp, nowMs < dmgUntil ? 0.85 : 0))
   }
 
   const roundMsgEl = document.getElementById('roundmsg') as HTMLElement | null
@@ -868,10 +903,27 @@ function exitToMenu(): void {
   if (document.pointerLockElement === canvas) document.exitPointerLock()
   phase = 'menu'
   loop.reset()
+  menuUI.showMenu()
+}
+
+// #6 加载屏（LOGO + 进度条 + 状态文字）
+function setLoadProgress(frac: number, label: string): void {
+  const bar = document.getElementById('loading-bar')
+  const status = document.getElementById('loading-status')
+  if (bar) bar.style.width = `${Math.round(frac * 100)}%`
+  if (status) status.textContent = label
+}
+function hideLoading(): void {
+  const el = document.getElementById('loading')
+  if (!el) return
+  el.classList.add('hidden')
+  setTimeout(() => el.remove(), 450)
 }
 
 async function init(): Promise<void> {
   if ((window as unknown as { __BOOT_FAILED?: boolean }).__BOOT_FAILED) return
+  // #6 加载屏：逐步报进度
+  setLoadProgress(0.05, '初始化渲染器…')
   // #43：渲染器构造失败（WebGL 上下文创建失败）→ 兜底页
   try {
     renderer = makeRenderer()
@@ -880,19 +932,25 @@ async function init(): Promise<void> {
     return
   }
   // 先加载生图表面贴图（失败回退 canvas），再建世界
-  await loadImageTextures(textures)
+  setLoadProgress(0.1, '加载贴图…')
+  await loadImageTextures(textures, (done, total) => setLoadProgress(0.1 + 0.35 * (done / total), `加载贴图 ${done}/${total}…`))
   // 人物模型（three.js 官方 Soldier「Vanguard」CC 资产；失败回退 character.glb 再退回色块）
+  setLoadProgress(0.55, '加载人物模型…')
+  let charDegraded = false
   if (!(await renderer.loadCharacterModel('/models/soldier.glb', 'T'))) {
+    charDegraded = true
     await renderer.loadCharacterModel('/models/character.glb', 'T')
   }
   // #30 阵营差异化：CT 独立模板（缺则回退共享 T 模板，不影响可用性）
   await renderer.loadCharacterModel('/models/ct_soldier.glb', 'CT').catch(() => false)
+  setLoadProgress(0.8, charDegraded ? '人物模型已降级（回退资产）' : '构建对局世界…')
   feedback = new Feedback(hudRoot, radarCanvas)
   // 首局：直接进主菜单，背景先渲染一张默认地图
   void startMatch({ ...matchConfig })
   // 主菜单 UI（覆盖在对局之上）
   menuUI = new MenuUI(hudRoot, {
     onStart: (cfg) => {
+      menuUI.hideAll()
       void startMatch(cfg)
     },
     onExit: () => exitToMenu(),
@@ -916,6 +974,8 @@ async function init(): Promise<void> {
     }
   })
 
+  setLoadProgress(1, '完成')
+  hideLoading()
   requestAnimationFrame(frame)
   window.addEventListener('resize', () => renderer.resize())
 }
@@ -934,6 +994,8 @@ interface DebugAPI {
   bulletPool?: number
   scorchPool?: number
   shotPool?: number
+  /** #输入控制器（headless 键鼠走查用） */
+  input?: unknown
 }
 if (import.meta.env.DEV) {
   ;(window as unknown as { __game?: DebugAPI }).__game = {
@@ -943,6 +1005,7 @@ if (import.meta.env.DEV) {
     },
     nav,
     events,
+    input,
     get renderer() {
       return renderer
     },

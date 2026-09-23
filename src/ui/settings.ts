@@ -116,7 +116,14 @@ export function loadMatchConfig(): MatchConfig {
   } catch {
     stored = {}
   }
-  return { ...DEFAULT_MATCH, ...stored }
+  const cfg: MatchConfig = { ...DEFAULT_MATCH, ...stored }
+  // #44 URL ?seed=12345 预填种子（优先级高于存档）
+  const sp = new URLSearchParams(window.location.search).get('seed')
+  if (sp !== null) {
+    const n = Number(sp)
+    if (Number.isFinite(n)) cfg.seed = Math.floor(n) & 0xffff
+  }
+  return cfg
 }
 
 export function saveMatchConfig(c: MatchConfig): void {

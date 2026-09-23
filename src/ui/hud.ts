@@ -34,7 +34,7 @@ export class HUD {
     this.statusEl.textContent = [
       `POS ${p.position.x.toFixed(0)} / ${p.position.y.toFixed(0)} / ${p.position.z.toFixed(0)}`,
       `SPD ${speed.toFixed(1)} u/s${p.onGround ? '' : ' (AIR)'}`,
-      `HP ${p.health.toFixed(0)} · GND ${p.onGround ? 'Y' : 'N'} · LAD ${p.onLadder ? 'Y' : 'N'}${gear}`,
+      `HP ${p.health.toFixed(0)} · GND ${p.onGround ? 'Y' : 'N'} · LAD ${p.onLadder ? 'Y' : 'N'}${gear} · SEED ${state.seed}`,
       state.targets.map((t) => `T${t.id} ${t.alive ? t.health.toFixed(0) : '---'}`).join('  '),
     ].join('\n')
     if (this.weaponEl) {

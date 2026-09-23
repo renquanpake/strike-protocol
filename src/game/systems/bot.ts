@@ -1,6 +1,7 @@
 import { CONFIG } from '../config'
 import { WEAPONS } from '../weapons'
 import type { GameState, PlayerEntity } from '../state'
+import { teamPlayers } from '../state'
 import type { PreppedLevel } from '../physics/collision'
 import type { NavGrid } from '../map/navmesh'
 import { astar } from '../map/navmesh'
@@ -151,8 +152,8 @@ export function updateBots(
       brain.path = null
     }
   }
-  // #25 残局：时间所剩无几且 C4 未安放 → T bot 强冲最近爆点下包
-  if (r.phase === 'live' && r.c4.state === 'carried' && r.c4.carrierId !== null) {
+  // #25 残局：时间所剩无几且 C4 未安放 → T bot 强冲最近爆点下包（无爆点地图跳过）
+  if (r.phase === 'live' && r.c4.state === 'carried' && r.c4.carrierId !== null && ctx.sites.length > 0) {
     const remainingSec = Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate
     if (remainingSec < 20) {
       for (const p of state.players) {
@@ -169,6 +170,18 @@ export function updateBots(
         }
         brain.objective = v3(best.center.x, best.elevation, best.center.z)
         brain.path = null
+      }
+    }
+  }
+  // #23 无线电：本队存活 ≤2 且未近期播报 → 随机呼叫支援（限频 10s/bot）
+  if (r.phase === 'live' || r.phase === 'bombPlanted') {
+    const aliveNow = (team: 'T' | 'CT') => teamPlayers(state, team).filter((p) => p.alive).length
+    for (const p of state.players) {
+      if (!p.isBot || !p.alive) continue
+      const brain = ctx.brains.get(p.id)!
+      if (aliveNow(p.team) <= 2 && state.tick - brain.lastRadioTick > 10 * CONFIG.tickRate && state.rng.float() < 0.02) {
+        brain.lastRadioTick = state.tick
+        events.emit({ type: 'radio', team: p.team, key: 'needBackup', playerId: p.id })
       }
     }
   }
@@ -273,6 +286,8 @@ export function updateBots(
         flash.ammoMag -= 1
         brain.flashTarget = enemy.id
         brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
+        // #23 无线电：投闪前呼叫
+        events.emit({ type: 'radio', team: p.team, key: 'flashOut', playerId: p.id })
       }
       const smoke = p.weapons.grenades[2]
       const c4 = state.round.c4
@@ -414,7 +429,19 @@ function perceiveEnemy(
 
 /** 目标分配：按战术抽签（#22）——T：rush/default/slow/lurk；CT：aggro/stack/default */
 function assignObjectives(state: GameState, ctx: BotContext): void {
-  const [siteA, siteB] = ctx.sites
+  // 无爆点地图（训练场等）：bot 留守出生区，不做目标分配
+  if (ctx.sites.length === 0) {
+    for (const p of state.players) {
+      if (!p.isBot) continue
+      const brain = ctx.brains.get(p.id)
+      if (!brain) continue
+      brain.objective = v3(p.position.x, p.position.y, p.position.z)
+      brain.path = null
+    }
+    return
+  }
+  const [siteA, siteBF] = ctx.sites
+  const siteB = siteBF ?? siteA // 单爆点图回落到 A
   const tBots = state.players.filter((x) => x.isBot && x.team === 'T')
   const ctBots = state.players.filter((x) => x.isBot && x.team === 'CT')
   tBots.forEach((p, i) => {

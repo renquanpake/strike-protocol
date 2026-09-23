@@ -236,9 +236,9 @@ function loadOrFallback(url: string, fallback: () => THREE.Texture): Promise<THR
   })
 }
 
-/** 异步把生图表面贴图覆盖进 map（保留 ladder/glass 的 canvas 版），并补枪身/阵营键 */
-export async function loadImageTextures(map: TextureMap): Promise<void> {
-  const entries = await Promise.all([
+/** 异步把生图表面贴图覆盖进 map（保留 ladder/glass 的 canvas 版），并补枪身/阵营键；onStep 报告进度 */
+export async function loadImageTextures(map: TextureMap, onStep?: (done: number, total: number) => void): Promise<void> {
+  const jobs: Array<Promise<THREE.Texture>> = [
     loadOrFallback('/textures/concrete.png', concreteTexture),
     loadOrFallback('/textures/wood.png', woodTexture),
     loadOrFallback('/textures/sand.png', sandTexture),
@@ -251,19 +251,21 @@ export async function loadImageTextures(map: TextureMap): Promise<void> {
     loadOrFallback('/textures/roof.png', roofTexture),
     loadOrFallback('/textures/sandbag.png', sandbagTexture),
     loadOrFallback('/textures/rusted.png', rustedTexture),
-  ])
-  map.concrete = entries[0]
-  map.wood = entries[1]
-  map.sand = entries[2]
-  map.metal = entries[3]
-  map.gun_metal = entries[4]
-  map.gun_wood = entries[5]
-  map.bot_ct = entries[6]
-  map.bot_t = entries[7]
-  map.stone = entries[8]
-  map.roof = entries[9]
-  map.sandbag = entries[10]
-  map.rusted = entries[11]
+  ]
+  const keys = [
+    'concrete', 'wood', 'sand', 'metal',
+    'gun_metal', 'gun_wood', 'bot_ct', 'bot_t',
+    'stone', 'roof', 'sandbag', 'rusted',
+  ]
+  const settled = await Promise.all(
+    jobs.map((j, i) =>
+      j.then((tex) => {
+        onStep?.(i + 1, jobs.length)
+        return tex
+      }),
+    ),
+  )
+  for (let i = 0; i < settled.length; i++) map[keys[i]] = settled[i]
 }
 
 /** 印花贴图：白底生成图 → 运行时提取 alpha（越黑越不透明），用于投射弹孔/烧痕 */

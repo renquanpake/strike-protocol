@@ -20,6 +20,7 @@ export class Feedback {
   private toasts: HTMLElement
   private spectate: HTMLElement
   private radar: HTMLCanvasElement
+  private gapScale = 1
 
   constructor(container: HTMLElement, radar: HTMLCanvasElement) {
     this.crosshair = container.querySelector('#crosshair') as HTMLElement
@@ -46,7 +47,7 @@ export class Feedback {
     this.crosshair.style.display = ''
     const def = WEAPONS[activeWeapon(p)?.defId ?? 'knife']
     const deg = spreadDegrees(p, def, aiming)
-    const gap = 6 + deg * gapPerDeg
+    const gap = (6 + deg * gapPerDeg) * this.gapScale
     this.crosshair.style.setProperty('--gap', `${gap}px`)
   }
 
@@ -54,7 +55,7 @@ export class Feedback {
   applyCrosshairSettings(style: string, color: string, gapScale: number): void {
     this.crosshair.setAttribute('data-style', style)
     this.crosshair.style.setProperty('--color', color)
-    this.crosshair.style.setProperty('--gapScale', String(gapScale))
+    this.gapScale = gapScale
   }
 
   // ===== #8 开镜 overlay =====
