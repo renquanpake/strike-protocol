@@ -157,4 +157,158 @@ describe('round & economy (M3)', () => {
     expect(r.phase).toBe('halftime')
     expect(r.sidesSwapped).toBe(true)
   })
+
+  it('#17 C4 掉落：T 侧存活者走近 40u 即拾取，CT 走近不拾取', () => {
+    const { state, prepped, events } = makeCtx()
+    const c4 = state.round.c4
+    state.round.phase = 'live'
+    state.round.phaseEndTick = state.tick + TICKS_1S * 115
+    // 携包者死亡 → 掉落在 T-1 出生位
+    c4.state = 'dropped'
+    c4.carrierId = null
+    state.players[0].position = v3(999, 0, 0) // 本地玩家远离
+    c4.position = { ...state.players[1].position }
+    // 一名 CT 也站到掉落点，验证不拾取
+    state.players[5].position = { ...state.players[1].position }
+    updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+    expect(c4.state).toBe('carried')
+    expect(c4.carrierId).toBe(1)
+
+    // CT 独占掉落点 → 保持 dropped（CT 出生位，所有 T 距离 >600u）
+    c4.state = 'dropped'
+    c4.carrierId = null
+    state.players[1].position = v3(-999, 0, 0)
+    c4.position = v3(0, 0, -300)
+    updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+    expect(c4.state).toBe('dropped')
+  })
+})
+
+function ffaLevel(): LevelDef {
+  return {
+    name: 'ffa-test',
+    spawns: {
+      T: spawnT(),
+      CT: spawnCT(),
+    },
+    sites: [],
+    brushes: [],
+  }
+}
+
+function spawnT() {
+  return [
+    v3(0, 0, 300),
+    v3(40, 0, 300),
+    v3(-40, 0, 300),
+    v3(80, 0, 300),
+    v3(-80, 0, 300),
+  ]
+}
+function spawnCT() {
+  return [
+    v3(0, 0, -300),
+    v3(40, 0, -300),
+    v3(-40, 0, -300),
+    v3(80, 0, -300),
+    v3(-80, 0, -300),
+  ]
+}
+
+function makeFfaCtx(mode: 'dm' | 'tdm') {
+  const level = ffaLevel()
+  const state = createGameState(level.spawns.T, level.spawns.CT, CONFIG.healthMax, CONFIG.startMoney, {
+    rngSeed: 0x77,
+    mode,
+    botCount: 9,
+  })
+  const prepped = prepareLevel(level)
+  const events = new EventBus()
+  state.round.phase = 'live'
+  state.round.phaseEndTick = Infinity
+  return { state, prepped, events }
+}
+
+describe('#26 加时 MR3', () => {
+  function winRound(state: ReturnType<typeof makeCtx>['state'], prepped: ReturnType<typeof prepareLevel>, events: EventBus, winner: 'T' | 'CT'): void {
+    const r = state.round
+    r.phase = 'live'
+    r.phaseEndTick = state.tick + 2
+    state.tick += 1
+    for (const pl of state.players) if (pl.team !== winner) pl.alive = false
+    updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+    // roundEnd → enterFreeze（下一回合）
+    r.phaseEndTick = 0
+    state.tick = 0
+    updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+  }
+
+  it('常规 15:15 进 OT1，OT 内每 3 回合换边，先到 19 胜结束', () => {
+    const { state, prepped, events } = makeCtx()
+    const r = state.round
+    // makeCtx 已消耗第 1 回合（进入 freeze）；第 2-31 回合交替取胜 → 15:15
+    for (let n = 2; n <= 31; n++) {
+      const winner: 'T' | 'CT' = n % 2 === 0 ? 'T' : 'CT'
+      winRound(state, prepped, events, winner)
+      if (n === 31) {
+        expect(r.score.T).toBe(15)
+        expect(r.score.CT).toBe(15)
+        expect(r.overtime).toBe(1)
+        expect(r.phase).toBe('freeze')
+      }
+    }
+    // OT1：再赢 4 回合让 T 到 19（=16+3 阈值）→ matchEnd；OT1 第 3 回合（round 33）节末换边
+    for (let n = 32; n <= 35; n++) {
+      const swappedBefore = r.sidesSwapped
+      winRound(state, prepped, events, 'T')
+      if (n === 34) expect(r.sidesSwapped).toBe(!swappedBefore) // OT 节末（round 33 结束）换边
+      if (n < 35) expect(r.phase).not.toBe('matchEnd')
+    }
+    expect(r.score.T).toBe(19)
+    expect(r.score.CT).toBe(15)
+    expect(r.phase).toBe('matchEnd')
+    expect(r.lastWinner).toBe('T')
+  })
+})
+
+describe('#36 死斗/团队死斗', () => {
+  it('dm：死亡 3s 后满血复活（避开敌人生成点）', () => {
+    const { state, prepped, events } = makeFfaCtx('dm')
+    const p = state.players[0]
+    p.alive = false
+    p.health = 0
+    p.deathTick = state.tick
+    const respawnTicks = Math.round((CONFIG.ffaRespawnMs / 1000) * CONFIG.tickRate)
+    let revivedAt = -1
+    for (let i = 1; i <= respawnTicks; i++) {
+      state.tick += 1
+      updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+      if (p.alive) {
+        revivedAt = i
+        break
+      }
+    }
+    expect(revivedAt).toBe(respawnTicks)
+    expect(p.health).toBe(CONFIG.healthMax)
+    expect(p.deathTick).toBe(-1)
+  })
+
+  it('dm：个人击杀达标 → matchEnd', () => {
+    const { state, prepped, events } = makeFfaCtx('dm')
+    state.players[0].kills = CONFIG.dmKillTarget
+    state.tick += 1
+    updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+    expect(state.round.phase).toBe('matchEnd')
+  })
+
+  it('tdm：队伍击杀达标 → matchEnd（胜方取击杀多的一队）', () => {
+    const { state, prepped, events } = makeFfaCtx('tdm')
+    // T 队合计 50（= 目标），CT 队 51 → 都达标，CT 击杀更多判 CT 胜
+    for (const pl of state.players) if (pl.team === 'T') pl.kills = 10
+    state.players[5].kills = CONFIG.tdmKillTarget + 1
+    state.tick += 1
+    updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+    expect(state.round.phase).toBe('matchEnd')
+    expect(state.round.lastWinner).toBe('CT')
+  })
 })

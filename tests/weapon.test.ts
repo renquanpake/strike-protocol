@@ -12,6 +12,7 @@ import {
   activeWeapon,
   fireWeapon,
   shotDamage,
+  spreadDegrees,
   updateWeaponSystem,
 } from '../src/game/systems/weapon'
 
@@ -267,6 +268,79 @@ describe('新枪行为 (M8)', () => {
     p.input = { ...emptyInput(), fireQueued: true }
     fireWeapon(state, p, prepped, events)
     expect(state.targets[0].health).toBeLessThanOrEqual(0)
+  })
+})
+
+describe('#8 ADS 散布规则', () => {
+  it('狙击未开镜（noscope）散布 = 站定值 + 8° 惩罚；开镜 = 站定值', () => {
+    const { p } = makeState()
+    p.onGround = true
+    p.velocity = v3(0, 0, 0)
+    const awp = WEAPONS.awp
+    const stand = awp.spreadDeg.stand
+    expect(spreadDegrees(p, awp, false)).toBeCloseTo(stand + 8, 5)
+    expect(spreadDegrees(p, awp, true)).toBeCloseTo(stand, 5)
+  })
+
+  it('无 zoom 武器不受开镜状态影响', () => {
+    const { p } = makeState()
+    p.onGround = true
+    p.velocity = v3(0, 0, 0)
+    const m4 = WEAPONS.m4
+    expect(m4.zoom).toBeUndefined()
+    expect(spreadDegrees(p, m4, false)).toBe(m4.spreadDeg.stand)
+    expect(spreadDegrees(p, m4, true)).toBe(m4.spreadDeg.stand)
+  })
+
+  it('noscope 散布严格大于开镜散布', () => {
+    const { p } = makeState()
+    p.onGround = true
+    p.velocity = v3(0, 0, 0)
+    for (const def of [WEAPONS.awp, WEAPONS.ssg08]) {
+      expect(spreadDegrees(p, def, false)).toBeGreaterThan(spreadDegrees(p, def, true))
+    }
+  })
+})
+
+describe('#4 结算统计埋点', () => {
+  it('命中累计 damageDealt；首杀置位 firstKills；爆头击杀累计 headshotKills', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    const victim = state.players[1]
+    victim.position = v3(0, 0, -200)
+    // 200u 处 AWP：身体约 100 伤（200 血不致死）、头部 4 倍（约 446 必杀）→ 只有爆头击杀才置位 headshotKills
+    victim.health = 200
+    p.weapons.primary = newWeaponInstance('awp')
+    p.activeSlot = 0
+    p.pitch = 0.003 // 微调抬头，射线对准 300u 处头部中心（y≈65，眼高 64）
+    state.round.phase = 'live'
+    state.tick = 0
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    expect(victim.alive).toBe(false)
+    expect(p.kills).toBe(1)
+    expect(p.headshotKills).toBe(1)
+    expect(p.firstKills).toBe(1)
+    expect(p.damageDealt).toBeGreaterThan(0)
+  })
+
+  it('非首杀不重复置位 firstKills', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    p.firstKills = 1
+    p.kills = 5
+    const victim = state.players[2]
+    victim.position = v3(0, 0, -300)
+    victim.health = 10
+    p.weapons.secondary = newWeaponInstance('glock')
+    p.activeSlot = 1
+    state.round.phase = 'live'
+    state.tick = 0
+    p.input = { ...emptyInput(), fireQueued: true }
+    fireWeapon(state, p, prepped, events)
+    expect(victim.alive).toBe(false)
+    expect(p.kills).toBe(6)
+    expect(p.firstKills).toBe(1) // 保持不变
   })
 })
 

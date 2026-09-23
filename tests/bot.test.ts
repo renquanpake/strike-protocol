@@ -8,10 +8,12 @@ import { createGameState, type GameState } from '../src/game/state'
 import { matchLevel } from '../src/game/map/match'
 import { prepareLevel } from '../src/game/physics/collision'
 import { buildNavGrid } from '../src/game/map/navmesh'
-import { createBotContext, updateBots, type BotContext } from '../src/game/systems/bot'
+import { createBotContext, updateBots, pickTactic, type BotContext } from '../src/game/systems/bot'
 import { updatePlayerMovement } from '../src/game/systems/movement'
 import { updateWeaponSystem, fireWeapon } from '../src/game/systems/weapon'
+import { updateGrenades } from '../src/game/systems/grenade'
 import { updateRound } from '../src/game/systems/round'
+import { newWeaponInstance } from '../src/game/weapons'
 
 const DT = 1 / CONFIG.tickRate
 
@@ -39,6 +41,7 @@ function sim(state: GameState, ctx: BotContext, prepped: ReturnType<typeof prepa
       updateWeaponSystem(state, p, events)
       fireWeapon(state, p, prepped, events)
     }
+    updateGrenades(state, prepped, events, DT)
     updateRound(state, prepped, events, DT)
     state.tick += 1
   }
@@ -170,5 +173,94 @@ describe('bot AI (M9 打磨)', () => {
     // 双方都至少击杀过 1 名对方：有来有回，不是一边倒
     expect(killsByTeam.T).toBeGreaterThan(0)
     expect(killsByTeam.CT).toBeGreaterThan(0)
+  })
+})
+
+describe('#19 Bot 难度分级', () => {
+  it('难度表 10 档，第 5 档 = 现行回归基线', () => {
+    expect(CONFIG.BOT_DIFFICULTY.length).toBe(10)
+    const base = CONFIG.BOT_DIFFICULTY[4]
+    expect(base.reactionMs).toEqual([200, 400])
+    expect(base.sigmaMul).toBe(1)
+    expect(base.tauMul).toBe(1)
+    expect(base.viewRange).toBe(480)
+    expect(base.strafePeriod).toBe(32)
+  })
+
+  it('档位单调：1 档反应最慢感知最弱，10 档最快最强', () => {
+    const l1 = CONFIG.BOT_DIFFICULTY[0]
+    const l10 = CONFIG.BOT_DIFFICULTY[9]
+    expect(l1.reactionMs[0]).toBeGreaterThan(l10.reactionMs[0])
+    expect(l1.viewRange).toBeLessThan(l10.viewRange)
+    expect(l1.sigmaMul).toBeGreaterThan(l10.sigmaMul)
+    expect(l1.strafePeriod).toBeGreaterThan(l10.strafePeriod)
+  })
+
+  it('createBotContext 按难度取档（越界收敛）', () => {
+    const { state } = makeWorld()
+    const sites = [] as { name: 'A' | 'B'; center: ReturnType<typeof v3>; elevation: number }[]
+    expect(createBotContext(state, sites, 1).profile).toBe(CONFIG.BOT_DIFFICULTY[0])
+    expect(createBotContext(state, sites, 5).profile).toBe(CONFIG.BOT_DIFFICULTY[4])
+    expect(createBotContext(state, sites, 99).profile).toBe(CONFIG.BOT_DIFFICULTY[9])
+  })
+})
+
+describe('#22 战术抽签（pickTactic 纯函数）', () => {
+  const roll = (v: number) => ({ float: () => v })
+  it('T：roll<0.3 rush / <0.6 slow / 否则 default', () => {
+    expect(pickTactic(roll(0.1), 'T', 0)).toBe('rush')
+    expect(pickTactic(roll(0.5), 'T', 0)).toBe('slow')
+    expect(pickTactic(roll(0.9), 'T', 0)).toBe('default')
+  })
+  it('T 连败 ≥3：lurk 概率提升（roll<0.45）', () => {
+    expect(pickTactic(roll(0.1), 'T', 3)).toBe('lurk')
+    expect(pickTactic(roll(0.5), 'T', 3)).toBe('slow')
+  })
+  it('CT：roll<0.3 aggro / 否则 default；连败 ≥3 stack 概率提升', () => {
+    expect(pickTactic(roll(0.1), 'CT', 0)).toBe('aggro')
+    expect(pickTactic(roll(0.5), 'CT', 0)).toBe('default')
+    expect(pickTactic(roll(0.1), 'CT', 3)).toBe('stack')
+    expect(pickTactic(roll(0.5), 'CT', 3)).toBe('default')
+  })
+})
+
+describe('#20 Bot 购买与投掷闪光弹', () => {
+  it('freeze 期 T bot 有钱买 flash（grenades[1]）', () => {
+    const { state, prepped, nav, events, ctx } = makeWorld()
+    state.round.phase = 'freeze'
+    state.round.roundNumber = 1
+    state.tick = 0
+    const bot = state.players[1]
+    bot.money = 4000 // 主武器 + 全套雷预算（经济按序扣钱）
+    updateBots(state, prepped, nav, ctx, events, DT)
+    expect(bot.weapons.grenades[1]?.defId).toBe('flash')
+    expect(bot.weapons.grenades[0]?.defId).toBe('he')
+  })
+
+  it('flash 投掷：首发现目标且 <500u 时抛出闪光弹', () => {
+    const { state, prepped, nav, events, ctx } = makeWorld()
+    ctx.processedRound = 1
+    const bot = state.players[1]
+    bot.weapons.grenades[1] = newWeaponInstance('flash')
+    bot.weapons.grenades[0] = null
+    const enemy = state.players[5]
+    // 面对面 200u（long 走廊内，LOS 清晰，<500 投掷距离）
+    bot.position = v3(1100, 0, -300)
+    bot.yaw = -Math.PI / 2
+    enemy.position = v3(1300, 0, -300)
+    enemy.yaw = Math.PI / 2
+    for (let i = 0; i < 10; i++) {
+      if (i === 1 || i === 5) continue
+      state.players[i].position = v3(400, 0, 1500)
+    }
+    state.round.phase = 'live'
+    state.round.phaseEndTick = Infinity
+    let threwFlash = false
+    events.on('grenadeExploded', (e) => {
+      if (e.kind === 'flash') threwFlash = true
+    })
+    sim(state, ctx, prepped, nav, events, 800)
+    expect(bot.weapons.grenades[1]?.ammoMag).toBe(0)
+    expect(threwFlash).toBe(true)
   })
 })
