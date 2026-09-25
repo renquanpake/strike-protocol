@@ -21,7 +21,7 @@ const BUTTONS: {
 }[] = [
   { key: 'fire', label: '开火', held: true, cls: 'tb-fire' },
   { key: 'aim', label: '镜', held: true, cls: 'tb-aim', title: '开镜' },
-  { key: 'jump', label: '跳', cls: 'tb-jump' },
+  { key: 'jump', label: '跳', held: true, cls: 'tb-jump' },
   { key: 'crouch', label: '蹲', held: true, cls: 'tb-crouch' },
   { key: 'reload', label: '弹', cls: 'tb-reload', title: '换弹' },
   { key: 'use', label: 'E', held: true, cls: 'tb-use', title: '安放/拆除 C4' },
