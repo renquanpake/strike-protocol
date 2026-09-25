@@ -988,6 +988,8 @@ interface DebugAPI {
   state(): GameState | null
   tickOnce(): void
   nav?: unknown
+  /** 当前预制地图（含 bombsites），headless 走查推进/下包用 */
+  level?: unknown
   events?: unknown
   renderer?: unknown
   textures?: unknown
@@ -1004,6 +1006,9 @@ if (import.meta.env.DEV) {
       if (state) stepLogic(1 / CONFIG.tickRate)
     },
     nav,
+    get level() {
+      return prepped
+    },
     events,
     input,
     get renderer() {
