@@ -27,10 +27,11 @@ export interface TargetDef {
 
 const TARGET_PART_COLORS = [0xc0392b, 0xa93226, 0xa93226, 0x7b241c, 0x641e16]
 
-/** 人物阵营配色：身体纯色 mannequin（去贴图保证远距阵营可读），头部保留贴图做中性提亮（键 = 阵营 accent） */
+/** 人物阵营配色：保留原贴图（真实感），用阵营色 tint 叠加区分阵营（键 = 阵营 accent）。
+ *  body = 身体贴图乘色（T 暖 / CT 冷，接近白以保留贴图细节）；head = 头部提亮；glow = 阴影兜底自发光 */
 const CHAR_TINTS: Record<number, { body: number; head: number; glow: number }> = {
-  0xc8862a: { body: 0xff9440, head: 0xd8d0c4, glow: 0xff7a1a },
-  0x3f6fae: { body: 0x5f8ff0, head: 0xd8d0c4, glow: 0x2f5fd8 },
+  0xc8862a: { body: 0xffc79a, head: 0xf3e6d6, glow: 0xff7a1a },
+  0x3f6fae: { body: 0x9cc4ff, head: 0xd6e2f2, glow: 0x2f5fd8 },
 }
 
 export class GameRenderer {
@@ -302,6 +303,9 @@ export class GameRenderer {
     }
   > = new Map()
   private charMats: Map<number, Map<THREE.Material, THREE.Material>> = new Map()
+  /** 人物黑边（倒置外壳）：共享膨胀几何 + 黑色 BackSide 材质 */
+  private outlineGeoCache = new Map<THREE.BufferGeometry, THREE.BufferGeometry>()
+  private outlineMat: THREE.MeshBasicMaterial | null = null
 
   /** 加载人物 GLB 模板，按玩家身高 140u 归一化；失败返回 false（bot 退回色块人形）。
    * #30：team 指定阵营模板（缺该阵营时回退共享 charTemplate） */
@@ -611,7 +615,7 @@ export class GameRenderer {
     const template = this.charTemplateFor(team) ?? this.charTemplate!
     const clips = this.charClipsFor(team)
     const model = skeletonClone(template) as THREE.Group
-    // 材质按 accent 缓存：身体纯色 mannequin（去贴图）、头部/发保留贴图中性提亮、眼睛保留
+    // 材质按 accent 缓存：身体保留贴图+阵营 tint、头部提亮、眼睛保留
     const tintDef = CHAR_TINTS[accent] ?? CHAR_TINTS[0xc8862a]
     let swapMap = this.charMats.get(accent)
     if (!swapMap) {
@@ -639,9 +643,9 @@ export class GameRenderer {
             dst = c
           } else {
             const c = m.clone() as THREE.MeshLambertMaterial
-            c.map = null // 身体：纯色 mannequin（去暗贴图），阵营色直接可见
+            // 保留原贴图（真实质感），阵营色以 tint 相乘区分（接近白，保留细节）
             c.color.copy(bodyColor)
-            c.emissive = glowColor.clone().multiplyScalar(0.18) // 阴影区兜底
+            c.emissive = glowColor.clone().multiplyScalar(0.1) // 阴影区弱自发光兜底
             dst = c
           }
           swapRef.set(m, dst)
@@ -688,6 +692,7 @@ export class GameRenderer {
     }
     this.charAnims.set(id, entry)
     if (idle) idle.play()
+    this.buildOutline(model)
     this.scene.add(model)
     this.humanoids.set(id, {
       group: model,
@@ -695,6 +700,53 @@ export class GameRenderer {
       fallStart: 0,
       fallDir: Math.random() < 0.5 ? -1 : 1,
     })
+  }
+
+  /** 人物黑边（倒置外壳）：对每个蒙皮网格生成法线膨胀的克隆几何，用黑色 BackSide 材质渲染出轮廓 */
+  private buildOutline(model: THREE.Object3D): void {
+    this.outlineMat ??= new THREE.MeshBasicMaterial({ color: 0x05070a, side: THREE.BackSide })
+    const th = 3.2 / this.charScale // 局部空间膨胀量（×charScale ≈ 3.2u 世界黑边宽）
+    model.traverse((o) => {
+      const m = o as THREE.SkinnedMesh
+      if (!(m as unknown as { isSkinnedMesh?: boolean }).isSkinnedMesh) return
+      let inflated = this.outlineGeoCache.get(m.geometry)
+      if (!inflated) {
+        inflated = this.inflateGeometry(m.geometry, th)
+        this.outlineGeoCache.set(m.geometry, inflated)
+      }
+      const om = new THREE.SkinnedMesh(inflated, this.outlineMat!)
+      om.skeleton = m.skeleton
+      om.bind(m.skeleton, m.bindMatrix)
+      om.frustumCulled = false
+      om.castShadow = false
+      om.receiveShadow = false
+      om.renderOrder = -1
+      om.position.copy(m.position)
+      om.quaternion.copy(m.quaternion)
+      om.scale.copy(m.scale)
+      const parent = m.parent ?? model
+      parent.add(om)
+    })
+  }
+
+  /** 顶点沿法线外推，得到膨胀几何（用于倒置外壳黑边） */
+  private inflateGeometry(geo: THREE.BufferGeometry, th: number): THREE.BufferGeometry {
+    const g = geo.clone()
+    const pos = g.attributes.position as THREE.BufferAttribute | undefined
+    const nrm = g.attributes.normal as THREE.BufferAttribute | undefined
+    if (pos && nrm && nrm.count === pos.count) {
+      for (let i = 0; i < pos.count; i++) {
+        pos.setXYZ(
+          i,
+          pos.getX(i) + nrm.getX(i) * th,
+          pos.getY(i) + nrm.getY(i) * th,
+          pos.getZ(i) + nrm.getZ(i) * th,
+        )
+      }
+      pos.needsUpdate = true
+    }
+    g.computeBoundingSphere()
+    return g
   }
 
   updateHumanoid(id: string, x: number, y: number, z: number, yaw: number, alive: boolean, flash: boolean, moving = false): void {
