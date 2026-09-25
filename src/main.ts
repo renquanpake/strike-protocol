@@ -25,6 +25,7 @@ import { setLanguage } from './ui/strings'
 import { ViewModel } from './ui/viewmodel'
 import { MenuUI, buildMatchEndStats, matchOptionsFromCfg } from './ui/menu'
 import { Feedback } from './ui/feedback'
+import { TouchController } from './ui/touch'
 import { AudioEngine } from './engine/audio'
 import { updateShells, spawnShell, type Shell } from './game/particles'
 import { TracerRing, tracerWanted } from './game/tracer'
@@ -67,6 +68,13 @@ let textures: TextureMap = buildTextures()
 // ===== 全局持久对象 =====
 const input = new InputController()
 input.attach(canvas)
+// 移动端触控层：触屏设备 / mobile.html / ?touch 自动启用（左摇杆 + 右拖拽视角 + 动作键）
+const IS_TOUCH =
+  window.matchMedia && window.matchMedia('(pointer: coarse)').matches
+    ? true
+    : 'ontouchstart' in window || location.pathname.includes('mobile') || new URLSearchParams(location.search).has('touch')
+let touch: TouchController | null = null
+if (IS_TOUCH) touch = new TouchController(hudRoot, input)
 const hud = new HUD(hudRoot)
 const loop = new FixedLoop(CONFIG.tickRate)
 const audio = new AudioEngine()
@@ -405,7 +413,7 @@ let pendingBuyToggle = false
 function stepLogic(dt: number): void {
   const st = state
   if (!st) return
-  const frame = input.poll()
+  const frame = touch ? touch.poll() : input.poll()
   st.players[0].input = frame
   // 边沿标志在 tick 级累积，避免一帧多 tick 时被后续 tick 覆盖丢失
   if (frame.buyQueued) pendingBuyToggle = true
@@ -547,6 +555,9 @@ function frame(now: number): void {
   lastFrameNow = now
 
   syncAudioScene()
+
+  // 触控层仅在对局进行中显示（菜单/暂停/结算隐藏，露出 DOM 菜单）
+  touch?.setVisible(phase === 'running')
 
   if (phase !== 'running') {
     // 菜单 / 暂停 / 结算：静态渲染（菜单作背景），不做逻辑
@@ -744,7 +755,7 @@ function frame(now: number): void {
     fpsWindowStart = now
   }
 
-  hud.update(st, fps, input.locked, now)
+  hud.update(st, fps, input.locked || (touch ? true : false), now)
   // 致盲白屏
   const blindEl = document.getElementById('blind') as HTMLElement | null
   if (blindEl) {
@@ -958,9 +969,20 @@ async function init(): Promise<void> {
       menuUI.hidePause()
       phase = 'running'
       loop.reset()
-      canvas.requestPointerLock()
+      if (!IS_TOUCH) canvas.requestPointerLock()
     },
   })
+  // 移动端暂停按钮（替代桌面 ESC/指针锁释放）
+  if (touch) {
+    touch.lookScale = 1.0 + (settings.mouseSens - 1) * 0.5
+    touch.onPause = () => {
+      if (phase === 'running') {
+        phase = 'paused'
+        loop.reset()
+        menuUI.showPause()
+      }
+    }
+  }
   // #7：设置实时生效钩子
   ;(hudRoot as HTMLElement & { __onSettingsApplied?: (s: Settings) => void }).__onSettingsApplied = applySettings
   applySettings(settings)
