@@ -55,6 +55,9 @@ export const CONFIG = {
   playerRadius: 24,
   eyeHeight: 64,
   crouchEyeHeight: 44,
+  /** 视觉人物（蒙皮模型）站立身高目标 u。地图/箱子按 140u 尺度建造（箱 96u≈waist），
+   *  140 与地图最自洽；124 略小一档（"偏大"感调校值）。调校区间 120–140。 */
+  charVisualHeight: 124,
 
   // 视角
   /** rad/px（≈0.04°/px，对标 CS 默认 sens 1.0 量级；设置层可再乘倍率） */

@@ -983,12 +983,13 @@ async function init(): Promise<void> {
   // 失败回退 soldier.glb（three.js 官方 Vanguard，仅 Idle/Run/Walk）再退回色块
   setLoadProgress(0.55, '加载人物模型…')
   let charDegraded = false
-  if (!(await renderer.loadCharacterModel('/models/character.glb', 'T'))) {
+  const chH = CONFIG.charVisualHeight
+  if (!(await renderer.loadCharacterModel('/models/character.glb', 'T', chH))) {
     charDegraded = true
-    await renderer.loadCharacterModel('/models/soldier.glb', 'T')
+    await renderer.loadCharacterModel('/models/soldier.glb', 'T', chH)
   }
   // #30 阵营差异化：CT 独立模板（缺则回退共享 T 模板，不影响可用性）
-  await renderer.loadCharacterModel('/models/ct_soldier.glb', 'CT').catch(() => false)
+  await renderer.loadCharacterModel('/models/ct_soldier.glb', 'CT', chH).catch(() => false)
   setLoadProgress(0.8, charDegraded ? '人物模型已降级（回退资产）' : '构建对局世界…')
   feedback = new Feedback(hudRoot, radarCanvas)
   // 首局：直接进主菜单，背景先渲染一张默认地图

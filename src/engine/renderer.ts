@@ -415,8 +415,8 @@ export class GameRenderer {
   private outlineMat: THREE.MeshBasicMaterial | null = null
 
   /** 加载人物 GLB 模板，按玩家身高 140u 归一化；失败返回 false（bot 退回色块人形）。
-   * #30：team 指定阵营模板（缺该阵营时回退共享 charTemplate） */
-  async loadCharacterModel(url: string, team: 'T' | 'CT' = 'T'): Promise<boolean> {
+    * #30：team 指定阵营模板（缺该阵营时回退共享 charTemplate）；targetHeight 站立身高目标（默认 140u） */
+  async loadCharacterModel(url: string, team: 'T' | 'CT' = 'T', targetHeight = 140): Promise<boolean> {
     try {
       const gltf = await new GLTFLoader().loadAsync(url)
       // 作者残留：Armature 根带约 15° X 轴旋转，归零保持站立姿态笔直
@@ -452,7 +452,7 @@ export class GameRenderer {
       this.charTemplate = gltf.scene
       this.charClips = gltf.animations
       // 归一化基准：skinned mesh 的 geometry bbox 是 bind pose（T 张开臂）范围，不可靠；
-      // 改用骨骼世界坐标极端点实测站立高度（140u 与游戏玩家等高）
+      // 改用骨骼世界坐标极端点实测站立高度，缩放到 targetHeight（main.ts 传 CONFIG.charVisualHeight）
       gltf.scene.updateWorldMatrix(true, true)
       let miny = Infinity
       let maxy = -Infinity
@@ -464,7 +464,7 @@ export class GameRenderer {
         if (y > maxy) maxy = y
       })
       const h = Math.max(maxy - miny, 1e-4)
-      this.charScale = 140 / h
+      this.charScale = targetHeight / h
       gltf.scene.scale.setScalar(this.charScale)
       gltf.scene.position.y = -miny * this.charScale
       // #30 记录阵营模板（共享字段指向 T 模板以兼容旧逻辑）
