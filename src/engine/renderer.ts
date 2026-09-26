@@ -27,11 +27,11 @@ export interface TargetDef {
 
 const TARGET_PART_COLORS = [0xc0392b, 0xa93226, 0xa93226, 0x7b241c, 0x641e16]
 
-/** 人物阵营配色：保留原贴图（真实感），用阵营色 tint 叠加区分阵营（键 = 阵营 accent）。
- *  body = 身体贴图乘色（T 暖 / CT 冷，接近白以保留贴图细节）；head = 头部提亮；glow = 阴影兜底自发光 */
+/** 人物阵营配色：保留原贴图，用强阵营 tint 相乘做到"警察蓝 / 匪沙色"一眼可辨（键 = 阵营 accent）。
+ *  body=身体贴图乘色；head=头部/盔/面罩；glow=阴影兜底自发光（同时是阵营识别色） */
 const CHAR_TINTS: Record<number, { body: number; head: number; glow: number }> = {
-  0xc8862a: { body: 0xffc79a, head: 0xf3e6d6, glow: 0xff7a1a },
-  0x3f6fae: { body: 0x9cc4ff, head: 0xd6e2f2, glow: 0x2f5fd8 },
+  0xc8862a: { body: 0xd89a58, head: 0x4a3524, glow: 0xff7a1a }, // T 匪：沙漠沙色 + 深褐头巾
+  0x3f6fae: { body: 0x3f6fd0, head: 0x182642, glow: 0x2f6fd8 }, // CT 警：深蓝警服 + 深蓝警盔
 }
 
 export class GameRenderer {
@@ -280,6 +280,8 @@ export class GameRenderer {
       /** #31 死亡倒地：起始墙钟 ms（0=存活/未倒地），倒下方向 ±1 */
       fallStart: number
       fallDir: number
+      /** 阵营色地面光环（T 橙 / CT 蓝），独立于 group，updateHumanoid 里平贴地面跟随 */
+      teamRing: THREE.Object3D | null
     }
   > = new Map()
   private decals: { pool: THREE.Mesh[]; free: number[]; size: number; texture: THREE.Texture }[] = []
@@ -565,6 +567,31 @@ export class GameRenderer {
     d.free.push(instanceIdx)
   }
 
+  /** 阵营色地面光环（独立 scene 对象，updateHumanoid 平贴地面跟随）：实心盘+描边，亮色醒目 */
+  private ringGeo: THREE.RingGeometry | null = null
+  private discGeo: THREE.CircleGeometry | null = null
+  private ringColorFor(accent: number): number {
+    return accent === 0x3f6fae ? 0x4a9ff0 : 0xff8a3a // CT 亮蓝（警）/ T 亮橙（匪）
+  }
+  makeTeamRing(accent: number): THREE.Mesh {
+    const color = this.ringColorFor(accent)
+    const grp = new THREE.Group()
+    this.discGeo ??= new THREE.CircleGeometry(24, 36)
+    this.ringGeo ??= new THREE.RingGeometry(20, 24, 36)
+    const disc = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }))
+    const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }))
+    for (const m of [disc, ring]) {
+      m.rotation.x = -Math.PI / 2
+      m.renderOrder = 2
+      m.frustumCulled = false
+    }
+    disc.position.y = 0
+    ring.position.y = 0.4
+    grp.add(disc, ring)
+    this.scene.add(grp)
+    return grp as unknown as THREE.Mesh
+  }
+
   /** 人形 bot：优先蒙皮人物模型（#30 按阵营选模板），模板缺失时退回色块盒人形 */
   addHumanoid(id: string, camo: THREE.Texture, accent: number, team: 'T' | 'CT' = 'T'): void {
     if (this.charTemplateFor(team) && this.charClipsFor(team).length > 0) {
@@ -607,6 +634,7 @@ export class GameRenderer {
       torsoMat: torso.material as THREE.MeshLambertMaterial,
       fallStart: 0,
       fallDir: Math.random() < 0.5 ? -1 : 1,
+      teamRing: this.makeTeamRing(accent),
     })
   }
 
@@ -643,9 +671,9 @@ export class GameRenderer {
             dst = c
           } else {
             const c = m.clone() as THREE.MeshLambertMaterial
-            // 保留原贴图（真实质感），阵营色以 tint 相乘区分（接近白，保留细节）
+            // 保留原贴图（真实质感），强阵营 tint 相乘做到警察蓝/匪沙色
             c.color.copy(bodyColor)
-            c.emissive = glowColor.clone().multiplyScalar(0.1) // 阴影区弱自发光兜底
+            c.emissive = glowColor.clone().multiplyScalar(0.42) // 阵营色自发光拉满：阴影/远处也一眼认得出警/匪
             dst = c
           }
           swapRef.set(m, dst)
@@ -699,6 +727,7 @@ export class GameRenderer {
       torsoMat: null as unknown as THREE.MeshLambertMaterial,
       fallStart: 0,
       fallDir: Math.random() < 0.5 ? -1 : 1,
+      teamRing: this.makeTeamRing(accent),
     })
   }
 
@@ -754,6 +783,12 @@ export class GameRenderer {
     if (!h) return
     const anim = this.charAnims.get(id)
     const nowMs = performance.now()
+
+    // 阵营光环：平贴地面跟随 x/z（不随倒地/转向倾斜），存活才显示
+    if (h.teamRing) {
+      h.teamRing.position.set(x, 0.6, z)
+      h.teamRing.visible = alive
+    }
 
     if (!alive) {
       // #31 死亡倒地：600ms 前扑倒地 + 随机偏航，尸体保留到回合重置
