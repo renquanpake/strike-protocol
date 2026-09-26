@@ -84,6 +84,12 @@ export interface PlayerEntity {
   stepTimer: number
   /** #36 死亡 tick（死斗复活计时），-1=存活 */
   deathTick: number
+  /** 开镜档位（0=未开镜；1..N = zoom.fovs 档位，由 main 每 tick 推进） */
+  aimStage: number
+  /** 连射散布增量（度，按 CONFIG.spreadDecayPerSec 时间衰减） */
+  fireSpread: number
+  /** 本回合击杀赏金累计（$1500/回合上限用） */
+  roundKillReward: number
   /** 本 tick 输入（Bot 为合成输入） */
   input: InputFrame
 }
@@ -207,7 +213,7 @@ export function makePlayer(
     activeSlot: 1,
     weapons: {
       primary: null,
-      secondary: newWeaponInstance('glock'),
+      secondary: newWeaponInstance(team === 'CT' ? 'usp' : 'glock'),
       knife: newWeaponInstance('knife'),
       grenades: [null, null, null, null],
     },
@@ -217,6 +223,9 @@ export function makePlayer(
     blindUntil: 0,
     stepTimer: 0,
     deathTick: -1,
+    aimStage: 0,
+    fireSpread: 0,
+    roundKillReward: 0,
     input: emptyInput(),
   }
 }

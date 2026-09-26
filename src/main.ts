@@ -2,6 +2,7 @@ import { CONFIG } from './game/config'
 import { createGameState, type GameState } from './game/state'
 import { matchLevel, type MapId } from './game/map/match'
 import { prepareLevel } from './game/physics/collision'
+import { buyItem } from './game/economy'
 import { buildNavGrid } from './game/map/navmesh'
 import { updatePlayerMovement, setMouseSensScale } from './game/systems/movement'
 import { updateWeaponSystem, fireWeapon, viewForward, viewRight } from './game/systems/weapon'
@@ -176,11 +177,8 @@ let dmgUntil = 0
 
 // ===== M2 手感层（#8-#16）=====
 let feedback: Feedback | null = null
-// #8 开镜：FOV 逐帧插值 + 倍镜档位（再按右键升档，松开归零）
-let curFov = 90
-let aimStage = 0
-let prevAimHeld = false
-let lastWeaponId = ''
+// #8 开镜：FOV 逐帧插值（档位 p.aimStage 由 stepLogic 推进）
+let curFov = 75
 // #11 屏幕震动
 let shakeUntil = 0
 let shakeAmp = 0
@@ -409,12 +407,27 @@ events.on('reloadStarted', () => audio.reload())
 events.on('roundEnd', (e) => audio.roundEnd(e.winner === 'T'))
 
 let pendingBuyToggle = false
+let prevLocalAimHeld = false
+let prevLocalWeaponId = ''
 
 function stepLogic(dt: number): void {
   const st = state
   if (!st) return
   const frame = touch ? touch.poll() : input.poll()
-  st.players[0].input = frame
+  const local = st.players[0]
+  local.input = frame
+  // 开镜档位（每 tick 推进，逻辑层确定性；渲染层只消费 p.aimStage）
+  const localW = activeWeapon(local)
+  const localWId = localW?.defId ?? ''
+  if (localWId !== prevLocalWeaponId) local.aimStage = 0
+  prevLocalWeaponId = localWId
+  const localZoom = localW ? WEAPONS[localWId].zoom : undefined
+  if (frame.aimHeld && localZoom) {
+    if (!prevLocalAimHeld) local.aimStage = (local.aimStage + 1) % (localZoom.fovs.length + 1)
+  } else {
+    local.aimStage = 0
+  }
+  prevLocalAimHeld = frame.aimHeld
   // 边沿标志在 tick 级累积，避免一帧多 tick 时被后续 tick 覆盖丢失
   if (frame.buyQueued) pendingBuyToggle = true
   if (botCtx) updateBots(st, prepped, nav, botCtx, events, dt)
@@ -423,7 +436,7 @@ function stepLogic(dt: number): void {
     if (!p.alive) continue
     updatePlayerMovement(st, p, prepped, dt, events)
     updateWeaponSystem(st, p, events)
-    fireWeapon(st, p, prepped, events)
+    fireWeapon(st, p, prepped, events, dt)
     updateDrops(st, p, events)
   }
   updateTargets(st, dt)
@@ -607,22 +620,15 @@ function frame(now: number): void {
   }
   prevFireQueued = p.input.fireQueued
 
-  // #8 开镜：右键按住时 FOV 逐帧 lerp + 镜 overlay（再按升倍镜，松开归零）
+  // #8 开镜：右键按住时 FOV 逐帧 lerp + 镜 overlay（档位由 stepLogic 推进 p.aimStage）
   const w = activeWeapon(p)
   const wId = w?.defId ?? ''
   const zoom = w ? WEAPONS[wId].zoom : undefined
-  if (wId !== lastWeaponId) {
-    aimStage = 0
-    lastWeaponId = wId
-  }
-  if (p.input.aimHeld && !prevAimHeld && zoom) aimStage = (aimStage + 1) % (zoom.fovs.length + 1)
-  if (!p.input.aimHeld) aimStage = 0
-  prevAimHeld = p.input.aimHeld
-  const aimActive = p.alive && aimStage > 0 && !!zoom
-  const targetFov = aimActive && zoom ? zoom.fovs[aimStage - 1] : settings.fov
+  const aimActive = p.alive && p.aimStage > 0 && !!zoom
+  const targetFov = aimActive && zoom ? zoom.fovs[p.aimStage - 1] : settings.fov
   curFov += (targetFov - curFov) * Math.min(1, frameDt * 9)
   renderer.setFov(curFov)
-  feedback?.setScope(aimActive, aimStage)
+  feedback?.setScope(aimActive, p.aimStage)
 
   refreshTargetDefs()
   renderer.updateTargets(targetDefs)
@@ -900,7 +906,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
 
   // UI 重绑（先清旧 DOM，避免重复 append）
   hudRoot.querySelectorAll('#buymenu, #scoreboard').forEach((el) => el.remove())
-  buyMenu = new BuyMenu(hudRoot, state, events)
+  buyMenu = new BuyMenu(hudRoot, state, prepped, events)
   scoreboard = new Scoreboard(hudRoot, state)
   radar = new Radar(radarCanvas, prepped)
 
@@ -1020,6 +1026,8 @@ interface DebugAPI {
   shotPool?: number
   /** #输入控制器（headless 键鼠走查用） */
   input?: unknown
+  /** 本地玩家购买（headless 买区/手枪轮走查用） */
+  buy?: (itemId: string) => boolean
 }
 if (import.meta.env.DEV) {
   ;(window as unknown as { __game?: DebugAPI }).__game = {
@@ -1033,6 +1041,10 @@ if (import.meta.env.DEV) {
     },
     events,
     input,
+    buy: (itemId: string) => {
+      if (!state) return false
+      return buyItem(state, state.players[0], itemId, events, prepped)
+    },
     get renderer() {
       return renderer
     },

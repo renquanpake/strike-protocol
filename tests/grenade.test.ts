@@ -125,7 +125,7 @@ describe('grenades (M6)', () => {
   it('购买投掷物进 4 格槽位', () => {
     const { state, events } = makeWorld()
     state.round.phase = 'freeze'
-    state.round.roundNumber = 1
+    state.round.roundNumber = 2 // 跳过首回合手枪轮
     const p = state.players[0]
     p.money = 5000
     expect(canBuyNow(state)).toBe(true)

@@ -46,11 +46,19 @@
         B 买枪 / G 丢装备 / Tab 计分板 / E 安放·拆除 C4 / Esc 暂停
       </div>
       <div id="round"></div>
+      <div id="bigtimer"></div>
       <div id="roundmsg"></div>
       <canvas id="radar" width="220" height="220"></canvas>
       <div id="status"></div>
       <div id="keys">FPS <span id="fps">--</span> · TICK <span id="tick">0</span></div>
       <div id="weapon"></div>
+      <div id="vitals">
+        <div id="hprow"><span id="hpnum">100</span><span id="apnum">—</span></div>
+        <div class="vbar hp"><i></i></div>
+        <div class="vbar ap"><i></i></div>
+      </div>
+      <div id="nades"><i>雷</i><i>闪</i><i>烟</i><i>燃</i></div>
+      <div id="ammopanel"><span id="ammod"></span><span id="ammore"></span></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

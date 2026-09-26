@@ -8,17 +8,19 @@ export const CONFIG = {
 
   // 运动（Source 风格）
   moveMaxSpeed: 250, // u/s
-  walkSpeed: 130,
+  walkSpeed: 85,
   duckSpeed: 85,
   groundAccel: 5.5, // 地面加速率（乘 maxspeed*dt 得每 tick 增量）
   airAccel: 12, // 空中加速率（bhop 增速来源）
   airSpeedCap: 30, // 空中每 tick 速度增量上限
   airMaxSpeed: 325, // 空中速度总量上限（bhop 上限，≈ CS 320）
-  groundFriction: 5.2, // 地面指数衰减率 /s
+  groundFriction: 3.0, // 地面指数衰减率 /s（CS mv_friction）
+  groundStopSpeed: 60, // 地面停速地板：低于后线性衰减至 0（CS stop_speed）
+  stepHeight: 18, // 可步行跨上台阶高度 u（CS mv_stepheight=18）
   airFriction: 0.02,
   jumpImpulse: 301.993, // u/s
   bhopWindowMs: 40, // 落地自动起跳窗口（M1 启用）
-  fallDamageThreshold: 580, // 坠落伤害起始速度 u/s
+  fallDamageThreshold: 400, // 坠落伤害起始速度 u/s（≈一层楼，CS 量级）
   maxFallSpeed: 700,
   gravity: 800, // u/s^2（jumpImpulse^2/2g ≈ 57u 跳跃高度，约 1.7m）
 
@@ -30,14 +32,15 @@ export const CONFIG = {
   // 梯子
   ladderClimbSpeed: 130, // u/s 上下攀爬速率
 
-  // 投掷物
-  grenadeThrowSpeed: 520, // u/s 出手初速
+  // 投掷物（对标 CS：抛速 ~20m/s，闪光有效距离 30m 级并随距离/朝向衰减）
+  grenadeThrowSpeed: 650, // u/s 出手初速（≈19.5m/s，CS ~20m/s）
   grenadeBounceFriction: 0.55, // 反弹速度保留
   heFuseMs: 3000,
-  heRadius: 150,
+  heRadius: 100, // ≈3m，CS 高爆有效半径（不伤投掷者，见 grenade.ts）
   flashFuseMs: 2800,
-  flashRadius: 150,
-  flashBlindMs: 4000,
+  flashRadius: 400, // ≈12m 内有效（CS 有效距离 20-50m 取保守档）
+  flashMinDist: 80, // 此距离内全量致盲，更远距离按比例衰减
+  flashBlindMs: 4000, // 贴脸满盲时长，随距离/朝向衰减
   smokeFuseMs: 2000, // 落地后延迟冒烟
   smokeRadius: 100,
   smokeLifeMs: 15000,
@@ -54,13 +57,15 @@ export const CONFIG = {
   crouchEyeHeight: 44,
 
   // 视角
-  mouseSens: 0.0021,
+  /** rad/px（≈0.04°/px，对标 CS 默认 sens 1.0 量级；设置层可再乘倍率） */
+  mouseSens: 0.0007,
   fov: 75,
   /** #9 动态准星：每度散布对应准星间距像素 */
   crosshairGapPerDeg: 6,
 
   // 战斗
-  movingSpeedThreshold: 30, // u/s：超过即视为移动态散布
+  /** 连射散布增量（°）的时间衰减（°/s，对标 CS 停火回准） */
+  spreadDecayPerSec: 4,
   botHoldFireRange: 350, // Bot 不开火的最大距离（狙击枪除外）
   botAimTauTicks: 192, // 瞄准收敛时间常数（tick，约 3s）
   /** 难度表 1-10 档（#19 消费）：反应窗口 [min,max] ms / 瞄准误差乘数 / 收敛时间常数乘数 / 感知距离 u / 走位周期 tick。
@@ -77,21 +82,22 @@ export const CONFIG = {
     { reactionMs: [120, 220], sigmaMul: 0.48, tauMul: 0.6, viewRange: 620, strafePeriod: 22 },
     { reactionMs: [90, 180], sigmaMul: 0.38, tauMul: 0.5, viewRange: 680, strafePeriod: 20 },
   ] as const,
+  /** 部位倍率（CS：腹 0.85、四肢 0.5；头部为逐枪 headMul，见 weapons.ts） */
   hitboxMultipliers: {
     head: 4,
     chest: 1,
-    stomach: 1,
-    arms: 0.7,
-    legs: 0.7,
+    stomach: 0.85,
+    arms: 0.5,
+    legs: 0.5,
   } as Record<'head' | 'chest' | 'stomach' | 'arms' | 'legs', number>,
 
   // 地图
   killFallY: -1000,
 
-  // 回合与经济
+  // 回合与经济（对标 CS:GO 现行规则）
   warmupMs: 5000,
   freezeMs: 5000,
-  buyTimeMs: 20000,
+  buyTimeMs: 5000, // live 期购买窗口（CS：冻结 5s + live 5s = 10s）
   roundTimeMs: 115000,
   c4TimerMs: 40000,
   plantMs: 3200,
@@ -107,8 +113,12 @@ export const CONFIG = {
   ffaRespawnMs: 3000,
   startMoney: 800,
   moneyCap: 16000,
-  roundWinBonus: 3000,
+  roundWinBonus: 3250,
   lossBonus: [1400, 1900, 2400, 2900, 3400], // 连败 2-6+ 档
+  killRewardCap: 1500, // 单回合击杀赏金上限（CS：$1500/回合）
+  buyZoneMargin: 250, // 出生区外包扩 u，构成购买区（CS 买区≈出生区）
+  /** 首回合（roundNumber=1）手枪轮：只允许刀/手枪/装备 */
+  pistolRound: true,
 
   // 渲染
   skyColor: 0x8fb8d8,

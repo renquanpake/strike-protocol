@@ -3,6 +3,7 @@
  * 数值类改动先落这里，再挂消费点（movement/renderer/audio/ui），禁止散落魔法数字。
  * 新增字段时保留旧存档合并：loadSettings() 浅合并 DEFAULTS，缺字段自动补齐。
  */
+import { CONFIG } from '../game/config'
 
 export interface CrosshairSettings {
   style: 'cross' | 'dot' | 'circle'
@@ -46,7 +47,7 @@ export const DEFAULT_BINDS: Record<string, string> = {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  fov: 90,
+  fov: CONFIG.fov, // 与 CONFIG.fov 单一来源（#3 数值不漂移）
   mouseSens: 1,
   volume: 0.7,
   crosshair: { style: 'cross', color: '#d8ffe8', gapScale: 1 },

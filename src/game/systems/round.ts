@@ -53,7 +53,11 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
     p.onLadder = false
     p.crouching = false
     p.blindUntil = 0
-    p.hasKit = p.team === 'CT' ? p.hasKit : false
+    p.aimStage = 0
+    p.fireSpread = 0
+    p.roundKillReward = 0
+    // CS：拆弹钳每回合需重购（不再跨回合保留）
+    p.hasKit = false
   }
   // 清场：投掷物与区域效果
   state.grenades = []

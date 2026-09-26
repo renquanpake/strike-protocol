@@ -33,21 +33,35 @@ function msToTicks(ms: number): number {
   return Math.round((ms / 1000) * CONFIG.tickRate)
 }
 
-/** 纯函数：单发伤害 = 基础伤害 × 部位倍率 × 距离衰减 × 护甲减免（#18：头盔减爆头） */
-export function shotDamage(def: WeaponDef, part: HitboxPart, dist: number, armor: number, helmet: boolean = false): number {
-  let d = def.damage * CONFIG.hitboxMultipliers[part]
+/** 单发伤害结算（纯函数）：
+ * 部位倍率（头部取逐枪 headMul，默认 4；腹 0.85 / 四肢 0.5，见 CONFIG）× 距离衰减 × 护甲。
+ * 护甲模型（对标 CS）：甲池 0-100 点；非头部命中吸收 50%（受甲池约束）；
+ * 头部命中仅当戴盔时吸收 50%（头盔不消耗甲池，但受甲池余量约束）。
+ * 返回最终伤害与本次甲池损耗。 */
+export function shotDamage(
+  def: WeaponDef,
+  part: HitboxPart,
+  dist: number,
+  armor: number,
+  helmet: boolean = false,
+): { damage: number; armorLost: number } {
+  const partMul =
+    part === 'head'
+      ? def.headMul ?? CONFIG.hitboxMultipliers.head
+      : CONFIG.hitboxMultipliers[part]
+  let d = def.damage * partMul
   if (dist > def.falloffStart && def.falloffEnd > def.falloffStart) {
     const t = (dist - def.falloffStart) / (def.falloffEnd - def.falloffStart)
     const factor = 1 - t * (1 - def.rangeModifier)
     d *= Math.max(def.rangeModifier, factor)
   }
-  if (part !== 'head' && armor > 0) {
-    d *= 1 - 0.5 * (1 - def.armorPenetration)
+  let armorLost = 0
+  const armored = part !== 'head' ? armor > 0 : helmet && armor > 0
+  if (armored) {
+    armorLost = Math.min(d * 0.5, armor)
+    d -= armorLost
   }
-  if (part === 'head' && helmet) {
-    d *= 1 - 0.5 * (1 - def.armorPenetration)
-  }
-  return d
+  return { damage: d, armorLost }
 }
 
 /** 换弹 / 切槽（每 tick，单玩家） */
@@ -70,7 +84,11 @@ export function updateWeaponSystem(state: GameState, p: PlayerEntity, events: Ev
     const w = activeWeapon(p)
     if (w) {
       const def = WEAPONS[w.defId]
-      if (def.magazine > 0 && w.reloadUntilTick === 0 && w.ammoMag < def.magazine && w.ammoReserve > 0) {
+      if (w.reloadUntilTick > 0) {
+        // CS：换弹中再按 R 取消换弹
+        w.reloadUntilTick = 0
+        events.emit({ type: 'reloadFinished', weaponId: def.id })
+      } else if (def.magazine > 0 && w.ammoMag < def.magazine && w.ammoReserve > 0) {
         w.reloadUntilTick = state.tick + msToTicks(def.reloadMs)
         events.emit({ type: 'reloadStarted', weaponId: def.id })
       }
@@ -90,12 +108,22 @@ export function updateWeaponSystem(state: GameState, p: PlayerEntity, events: Ev
     if (target && p.activeSlot !== slot) {
       p.activeSlot = slot
       target.burstCount = 0
+      target.recoilIndex = 0
       target.nextFireTick = state.tick + msToTicks(150) // 切枪硬直
     }
   }
 
   const w = activeWeapon(p)
   if (w && !inp.fireHeld) w.burstCount = 0
+  // 后坐力停火回卷（CS：停火 ~3s 后序列回到第 1 发）
+  if (
+    w &&
+    !inp.fireHeld &&
+    w.lastShotTick > 0 &&
+    state.tick - w.lastShotTick >= msToTicks(3000)
+  ) {
+    w.recoilIndex = 0
+  }
 }
 
 /** 开火（hitscan，每 tick 至多一发） */
@@ -104,6 +132,7 @@ export function fireWeapon(
   shooter: PlayerEntity,
   level: PreppedLevel,
   events: EventBus,
+  dt: number = 1 / CONFIG.tickRate,
 ): void {
   if (!shooter.alive) return
   // 买枪期/回合间隙禁止开火（对标 CS：仅 live/bombPlanted/warmup 可开火）
@@ -115,6 +144,9 @@ export function fireWeapon(
   const w = activeWeapon(p)
   if (!w) return
   const def = WEAPONS[w.defId]
+
+  // 连射散布的时间衰减（停火回准，对标 CS inaccuracy decay）
+  p.fireSpread = Math.max(0, p.fireSpread - CONFIG.spreadDecayPerSec * dt)
 
   if (state.tick < w.nextFireTick) return
   if (w.reloadUntilTick > 0) return
@@ -148,10 +180,19 @@ export function fireWeapon(
   }
 
   // #37 训练场：无限弹药（不扣弹匣）
-  if (w.ammoMag <= 0 && !state.training) return
+  if (w.ammoMag <= 0 && !state.training) {
+    // CS：空仓开火自动触发换弹（有备弹时）
+    if (w.ammoReserve > 0 && w.reloadUntilTick === 0) {
+      w.reloadUntilTick = state.tick + msToTicks(def.reloadMs)
+      events.emit({ type: 'reloadStarted', weaponId: def.id })
+    }
+    return
+  }
   if (!state.training) w.ammoMag -= 1
   w.burstCount += 1
   w.nextFireTick = state.tick + msToTicks(def.fireRateMs)
+  w.lastShotTick = state.tick
+  p.fireSpread += def.spreadDeg.burstGrow
 
   // 后坐力：固定序列推进
   if (def.recoilPattern.length > 0) {
@@ -163,7 +204,7 @@ export function fireWeapon(
 
   // 弹道
   const forward = viewForward(p.yaw, p.pitch)
-  const coneDeg = spreadDegrees(p, def, p.input.aimHeld) + def.spreadDeg.burstGrow * Math.min(w.burstCount, 10)
+  const coneDeg = spreadDegrees(p, def, p.input.aimHeld)
   const coneRad = (coneDeg * Math.PI) / 180
   let right = viewRight(p.yaw, p.pitch)
   const fr = forward.x * right.x + forward.y * right.y + forward.z * right.z
@@ -193,7 +234,7 @@ export function fireWeapon(
       const t = state.targets.find((x) => x.id === tid)
       if (!t || !t.alive || !hit.part) continue
       const part = hit.part as HitboxPart
-      const dmg = shotDamage(def, part, hit.t, 0)
+      const { damage: dmg } = shotDamage(def, part, hit.t, 0)
       t.health -= dmg
       t.hitFlashTick = state.tick
       events.emit({ type: 'hit', victimId: tid, part, damage: dmg, attackerId: p.id })
@@ -207,8 +248,8 @@ export function fireWeapon(
       const victim = state.players.find((x) => x.id === vid)
       if (!victim || !victim.alive || !hit.part) continue
       const part = hit.part as HitboxPart
-      const dmg = shotDamage(def, part, hit.t, victim.armor, victim.helmet)
-      applyPlayerHit(state, p, victim, dmg, def, events, part === 'head')
+      const { damage: dmg, armorLost } = shotDamage(def, part, hit.t, victim.armor, victim.helmet)
+      applyPlayerHit(state, p, victim, dmg, def, events, part === 'head', armorLost)
     } else if (hit.target.startsWith('brush:')) {
       // #35 玻璃：命中玻璃 brush → 一次性碎裂（物理通行 + 渲染隐藏 + 音效/碎片）
       const bi = Number(hit.target.split(':').slice(1).join(':'))
@@ -247,8 +288,10 @@ function applyPlayerHit(
   def: WeaponDef,
   events: EventBus,
   headshot: boolean = false,
+  armorLost: number = 0,
 ): void {
   victim.health = Math.max(0, victim.health - dmg)
+  if (armorLost > 0) victim.armor = Math.max(0, victim.armor - armorLost)
   shooter.damageDealt += dmg
   events.emit({ type: 'hit', victimId: victim.id, part: headshot ? 'head' : 'body', damage: dmg, attackerId: shooter.id })
   if (victim.health <= 0) {
@@ -267,7 +310,13 @@ function applyPlayerHit(
       if (def.category === 'grenade' && def.id === 'he') state.matchStats.heKills += 1
       if (!state.matchStats.killCats.includes(def.category)) state.matchStats.killCats.push(def.category)
     }
-    grantKillReward(shooter, def.killReward)
+    // 击杀赏金：单回合 $1500 上限（CS：kill reward cap）
+    const remaining = CONFIG.killRewardCap - shooter.roundKillReward
+    if (remaining > 0) {
+      const amount = Math.min(def.killReward, remaining)
+      shooter.roundKillReward += amount
+      grantKillReward(shooter, amount)
+    }
     // C4 持有者死亡 → 掉落
     if (state.round.c4.state === 'carried' && state.round.c4.carrierId === victim.id) {
       state.round.c4.state = 'dropped'
@@ -335,23 +384,14 @@ function meleeStrike(state: GameState, p: PlayerEntity, def: WeaponDef, eye: Vec
   }
 }
 
-/** 散布状态锥角（度）：站定 / 移动 / 空中。
- * #8：有开镜的武器（zoom）——开镜时用 stand 值；未开镜 noscope 加 8° 惩罚。
- * 无 zoom 武器不受 aiming 影响。 */
-export function spreadDegrees(p: PlayerEntity, def: WeaponDef, aiming: boolean = false): number {
-  if (def.zoom) {
-    if (aiming) {
-      const hspeed = Math.hypot(p.velocity.x, p.velocity.z)
-      if (!p.onGround) return def.spreadDeg.air
-      if (hspeed > CONFIG.movingSpeedThreshold) return def.spreadDeg.move
-      return def.spreadDeg.stand
-    }
-    return def.spreadDeg.stand + 8
-  }
+/** 散布状态锥角（度）：站定基础 + 速度连续插值（地面/空中按速度比例 0→满）+ 连射增量（时间衰减）。
+ * 有开镜武器：开镜时按站定基础计；未开镜不再加惩罚（对标 CS，鼓励开镜靠倍率而非散布惩罚）。
+ * `_aiming` 保留参数以稳定调用方签名。 */
+export function spreadDegrees(p: PlayerEntity, def: WeaponDef, _aiming: boolean = false): number {
   const hspeed = Math.hypot(p.velocity.x, p.velocity.z)
-  if (!p.onGround) return def.spreadDeg.air
-  if (hspeed > CONFIG.movingSpeedThreshold) return def.spreadDeg.move
-  return def.spreadDeg.stand
+  const ratio = p.onGround ? Math.min(1, hspeed / CONFIG.moveMaxSpeed) : Math.min(1, hspeed / CONFIG.airMaxSpeed)
+  const extra = p.onGround ? def.spreadDeg.move : def.spreadDeg.air
+  return def.spreadDeg.stand + extra * ratio + p.fireSpread
 }
 
 export function viewForward(yaw: number, pitch: number): Vec3 {

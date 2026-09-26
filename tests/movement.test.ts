@@ -9,7 +9,7 @@ import { updatePlayerMovement } from '../src/game/systems/movement'
 
 const DT = 1 / CONFIG.tickRate
 
-function makeLevel(kind: 'open' | 'wall' | 'ladder'): LevelDef {
+function makeLevel(kind: 'open' | 'wall' | 'ladder' | 'step18' | 'step32'): LevelDef {
   const brushes: LevelDef['brushes'] = [
     {
       min: { x: -512, y: -32, z: -512 },
@@ -32,6 +32,15 @@ function makeLevel(kind: 'open' | 'wall' | 'ladder'): LevelDef {
       ladder: true,
     })
   }
+  if (kind === 'step18' || kind === 'step32') {
+    // 抬升区：z ≤ 60 的地面抬高 H（玩家站在抬升区内，验证能否步行爬上顶面）
+    const h = kind === 'step18' ? 18 : 32
+    brushes.push({
+      min: { x: -512, y: 0, z: -512 },
+      max: { x: 512, y: h, z: 60 },
+      material: 'concrete',
+    })
+  }
   return {
     name: kind,
     spawns: { T: [{ x: 0, y: 40, z: 0 }], CT: [] },
@@ -40,7 +49,7 @@ function makeLevel(kind: 'open' | 'wall' | 'ladder'): LevelDef {
   }
 }
 
-function makeState(kind: 'open' | 'wall' | 'ladder') {
+function makeState(kind: 'open' | 'wall' | 'ladder' | 'step18' | 'step32') {
   const level = makeLevel(kind)
   const prepped = prepareLevel(level)
   const state = createGameState(level.spawns.T, [], CONFIG.healthMax, 800, 0x11)
@@ -106,6 +115,26 @@ describe('movement (M0 baseline)', () => {
     runTicks(ctx, 128, { forward: 1 })
     expect(ctx.p.position.z).toBeGreaterThan(-52)
     expect(ctx.p.position.z).toBeLessThan(-20)
+  })
+
+  it('18u 台阶可步行爬上（CS step-up），32u 超出台阶高度被阻挡', () => {
+    const up = makeState('step18')
+    settle(up)
+    up.p.position = v3(0, 0, 20)
+    up.p.velocity = v3()
+    up.p.onGround = true
+    runTicks(up, 96, { forward: 1 })
+    expect(up.p.position.y).toBeCloseTo(18, 0) // 已站上抬升区顶面
+    expect(up.p.position.z).toBeLessThan(-140) // 顺利穿过去
+
+    const block = makeState('step32')
+    settle(block)
+    block.p.position = v3(0, 0, 20)
+    block.p.velocity = v3()
+    block.p.onGround = true
+    runTicks(block, 96, { forward: 1 })
+    expect(block.p.position.y).toBeCloseTo(0, 0) // 没爬上去
+    expect(block.p.position.z).toBeGreaterThan(-140) // 被挡在抬升区前缘
   })
 
   it('蹲下时移速上限降为 duckSpeed', () => {

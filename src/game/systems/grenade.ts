@@ -154,9 +154,10 @@ function detonate(state: GameState, g: (typeof state.grenades)[number], level: P
   switch (g.kind) {
     case 'he': {
       const radius = CONFIG.heRadius
-      const owner = state.players[g.owner]
+      // CS：高爆不伤投掷者
+      const self = state.players[g.owner]
       for (const p of state.players) {
-        if (!p.alive) continue
+        if (!p.alive || p === self) continue
         const d = Math.hypot(p.position.x - g.position.x, p.position.y + 40 - g.position.y, p.position.z - g.position.z)
         if (d <= radius) {
           const dmg = WEAPONS.he.damage * (1 - d / radius)
@@ -175,12 +176,12 @@ function detonate(state: GameState, g: (typeof state.grenades)[number], level: P
           }
         }
       }
-      void owner
       break
     }
     case 'flash': {
       const radius = CONFIG.flashRadius
-      const blindTicks = Math.round((CONFIG.flashBlindMs / 1000) * CONFIG.tickRate)
+      const minDist = CONFIG.flashMinDist
+      const fullTicks = Math.round((CONFIG.flashBlindMs / 1000) * CONFIG.tickRate)
       const boxes = level.solids.map((b, i) => ({ id: `b${i}`, min: b.min, max: b.max }))
       for (const p of state.players) {
         if (!p.alive) continue
@@ -192,7 +193,14 @@ function detonate(state: GameState, g: (typeof state.grenades)[number], level: P
         if (dist > radius || dist < 1e-6) continue
         const hit = raycastBoxes(eye, v3(dx / dist, dy / dist, dz / dist), boxes)
         if (hit && hit.t < dist - 10) continue // 被墙挡住
-        p.blindUntil = state.tick + blindTicks
+        // CS 式衰减：距离（贴脸全量 → 边缘 0）× 朝向（正对全量 → 背对 0.1）
+        const distFactor = dist <= minDist ? 1 : Math.max(0, 1 - (dist - minDist) / (radius - minDist))
+        const fx = -Math.sin(p.yaw)
+        const fz = -Math.cos(p.yaw)
+        const dot = fx * (dx / dist) + fz * (dz / dist)
+        const angleFactor = Math.max(0.1, Math.min(1, (dot + 0.5) / 1.0))
+        const blindTicks = Math.round(fullTicks * distFactor * angleFactor)
+        if (blindTicks > 0) p.blindUntil = Math.max(p.blindUntil, state.tick + blindTicks)
       }
       break
     }

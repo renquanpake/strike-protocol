@@ -65,18 +65,70 @@ describe('round & economy (M3)', () => {
     const { state, events } = makeCtx()
     const p = state.players[0]
     p.money = 4000
+    state.round.roundNumber = 2 // 跳过手枪轮
     expect(canBuyNow(state)).toBe(true)
     expect(buyItem(state, p, 'm4', events)).toBe(true)
     expect(p.weapons.primary?.defId).toBe('m4')
     expect(p.money).toBe(4000 - WEAPONS.m4.price)
 
-    // live 已过 30s（购买窗口 20s）→ 拒绝
+    // live 已过 30s（购买窗口 5s+冻结 5s）→ 拒绝
     state.round.phase = 'live'
     state.tick = TICKS_1S * 30
     state.round.phaseEndTick = TICKS_1S * 115
     expect(canBuyNow(state)).toBe(false)
     expect(buyItem(state, p, 'awp', events)).toBe(false)
     expect(p.weapons.primary?.defId).toBe('m4')
+  })
+
+  it('首回合手枪轮：禁步枪/投掷物，允许手枪与装备', () => {
+    const { state, events } = makeCtx()
+    const p = state.players[0]
+    p.money = 10000
+    state.round.roundNumber = 1
+    expect(buyItem(state, p, 'm4', events)).toBe(false)
+    expect(buyItem(state, p, 'he', events)).toBe(false)
+    expect(buyItem(state, p, 'kevlar', events)).toBe(true)
+    expect(p.armor).toBe(100)
+    expect(buyItem(state, p, 'deagle', events)).toBe(true)
+    state.round.roundNumber = 2
+    expect(buyItem(state, p, 'm4', events)).toBe(true)
+  })
+
+  it('阵营限购：CT 不卖燃烧瓶 / T 不卖拆弹钳', () => {
+    const { state, events } = makeCtx()
+    state.round.roundNumber = 2
+    const ct = state.players[5]
+    const t = state.players[0]
+    ct.money = 10000
+    t.money = 10000
+    expect(buyItem(state, ct, 'molotov', events)).toBe(false)
+    expect(buyItem(state, t, 'kit', events)).toBe(false)
+    expect(buyItem(state, ct, 'kit', events)).toBe(true)
+  })
+
+  it('买区限制：本方出生区内可买，区外拒绝', () => {
+    const { state, prepped, events } = makeCtx()
+    const p = state.players[0] // T 侧出生区 (0,0,300)
+    p.money = 10000
+    state.round.roundNumber = 2
+    expect(buyItem(state, p, 'm4', events, prepped)).toBe(true)
+    p.position = v3(0, 0, -300) // 站到 CT 侧
+    expect(buyItem(state, p, 'ak', events, prepped)).toBe(false)
+  })
+
+  it('拆弹钳不跨回合保留（每回合重购）', () => {
+    const { state, prepped, events } = makeCtx()
+    const p = state.players[5] // CT
+    p.money = 10000
+    state.round.roundNumber = 2
+    expect(buyItem(state, p, 'kit', events)).toBe(true)
+    expect(p.hasKit).toBe(true)
+    // 模拟回合切换（enterFreeze）→ 钳子清空
+    state.round.phase = 'roundEnd'
+    state.round.phaseEndTick = 0
+    state.tick = 0
+    updateRound(state, prepped, events, 1 / CONFIG.tickRate)
+    expect(p.hasKit).toBe(false)
   })
 
   it('余额不足时购买被拒绝', () => {

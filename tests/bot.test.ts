@@ -48,15 +48,15 @@ function sim(state: GameState, ctx: BotContext, prepped: ReturnType<typeof prepa
 }
 
 describe('bot AI (M5)', () => {
-  it('freeze 期 Bot 按经济购买主武器', () => {
+  it('freeze 期 Bot 按经济购买主武器（T 系 AK / CT 系 M4）', () => {
     const { state, prepped, nav, events, ctx } = makeWorld()
     state.round.phase = 'freeze'
-    state.round.roundNumber = 1
+    state.round.roundNumber = 2 // 跳过首回合手枪轮
     state.tick = 0
-    const bot = state.players[1] // T-1，800 钱
+    const bot = state.players[1] // T-1
     bot.money = 4000
     updateBots(state, prepped, nav, ctx, events, DT)
-    expect(bot.weapons.primary?.defId).toBe('m4')
+    expect(bot.weapons.primary?.defId).toBe('ak')
     expect(bot.activeSlot).toBe(0)
   })
 
@@ -228,7 +228,7 @@ describe('#20 Bot 购买与投掷闪光弹', () => {
   it('freeze 期 T bot 有钱买 flash（grenades[1]）', () => {
     const { state, prepped, nav, events, ctx } = makeWorld()
     state.round.phase = 'freeze'
-    state.round.roundNumber = 1
+    state.round.roundNumber = 2 // 跳过首回合手枪轮
     state.tick = 0
     const bot = state.players[1]
     bot.money = 4000 // 主武器 + 全套雷预算（经济按序扣钱）
@@ -262,5 +262,35 @@ describe('#20 Bot 购买与投掷闪光弹', () => {
     sim(state, ctx, prepped, nav, events, 800)
     expect(bot.weapons.grenades[1]?.ammoMag).toBe(0)
     expect(threwFlash).toBe(true)
+  })
+})
+
+describe('retake 目标重分配（队友阵亡）', () => {
+  it('T 队友阵亡 → 存活 T bot 路径重置、目标回位爆点、出发延迟清零', () => {
+    const { state, prepped, nav, events, ctx } = makeWorld()
+    state.round.phase = 'live'
+    state.round.roundNumber = 2
+    ctx.processedRound = 2 // 跳过 freeze 抽签，聚焦 retake
+    const tBots = state.players.filter((x) => x.isBot && x.team === 'T')
+    // 阵亡一名 T bot（本 tick 死亡）
+    tBots[0].alive = false
+    tBots[0].deathTick = state.tick
+    // 给存活 T bot 塞脏数据，验证 retake 会重置
+    for (const b of tBots.slice(1)) {
+      const brain = ctx.brains.get(b.id)!
+      brain.objective = v3(9999, 0, 9999)
+      brain.path = [v3(1, 0, 1), v3(2, 0, 2)]
+      brain.waitUntilTick = state.tick + 500
+    }
+    updateBots(state, prepped, nav, ctx, events, DT)
+    for (const b of tBots.slice(1)) {
+      const brain = ctx.brains.get(b.id)!
+      const onSite = ctx.sites.some(
+        (s) => Math.hypot(s.center.x - brain.objective.x, s.center.z - brain.objective.z) < 60,
+      )
+      expect(onSite).toBe(true) // 目标被重分配到 A/B 爆点（脏数据 9999 被覆盖）
+      expect(brain.waitUntilTick).toBe(0) // force 清除出发延迟
+      expect(brain.reactionUntil).toBe(0) // 反应窗口重置
+    }
   })
 })

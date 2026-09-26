@@ -6,7 +6,7 @@ import type { PreppedLevel } from '../physics/collision'
 import type { NavGrid } from '../map/navmesh'
 import { astar } from '../map/navmesh'
 import { raycastBoxes } from '../physics/raycast'
-import { buyItem } from '../economy'
+import { buyItem, GEAR_PRICES } from '../economy'
 import { inSmoke, throwGrenade } from './grenade'
 import { v3, type Vec3 } from '../../engine/math'
 import type { EventBus } from '../../engine/eventbus'
@@ -46,6 +46,8 @@ export type BotTactic = 'rush' | 'default' | 'slow' | 'lurk' | 'aggro' | 'stack'
 export interface BotContext {
   brains: Map<number, BotBrain>
   processedRound: number
+  /** 本回合 freeze 起始 tick（botEconomy 购买窗口 = freeze 前 128 tick，按回合相对计时） */
+  freezeStartTick: number
   sites: { name: 'A' | 'B'; center: Vec3; elevation: number }[]
   /** #19 难度参数（第 5 档 = 现行基线） */
   profile: (typeof CONFIG.BOT_DIFFICULTY)[number]
@@ -105,7 +107,7 @@ export function createBotContext(
       })
     }
   }
-  return { brains, processedRound: -1, sites, profile, tacticT: 'default', tacticCT: 'default' }
+  return { brains, processedRound: -1, freezeStartTick: 0, sites, profile, tacticT: 'default', tacticCT: 'default' }
 }
 
 function gauss(rng: { float(): number }): number {
@@ -140,8 +142,16 @@ export function updateBots(
     ctx.tacticT = pickTactic(state.rng, 'T', r.lossStreak.T)
     ctx.tacticCT = pickTactic(state.rng, 'CT', r.lossStreak.CT)
     assignObjectives(state, ctx)
-    botEconomy(state, events)
+    ctx.freezeStartTick = state.tick
+    botEconomy(state, events, state.tick)
     ctx.processedRound = r.roundNumber
+  }
+  // retake：队友本 tick 阵亡 → 重分配战术目标（换防/改推点，避免 5 个 bot 站桩等死）
+  for (const p of state.players) {
+    if (p.isBot && !p.alive && p.deathTick === state.tick) {
+      assignObjectives(state, ctx, true)
+      break
+    }
   }
   // C4 已安放 → CT 目标切到 C4 位置
   if (r.c4.state === 'planted') {
@@ -427,8 +437,9 @@ function perceiveEnemy(
   return best
 }
 
-/** 目标分配：按战术抽签（#22）——T：rush/default/slow/lurk；CT：aggro/stack/default */
-function assignObjectives(state: GameState, ctx: BotContext): void {
+/** 目标分配：按战术抽签（#22）——T：rush/default/slow/lurk；CT：aggro/stack/default。
+ * force=true（队友阵亡 retake）：跳过出发延迟，立即重新分配，不重置投掷冷却。 */
+function assignObjectives(state: GameState, ctx: BotContext, force = false): void {
   // 无爆点地图（训练场等）：bot 留守出生区，不做目标分配
   if (ctx.sites.length === 0) {
     for (const p of state.players) {
@@ -455,14 +466,11 @@ function assignObjectives(state: GameState, ctx: BotContext): void {
     brain.path = null
     brain.reactionUntil = 0
     brain.targetId = null
-    brain.smokedThisRound = false
-    brain.flashTarget = null
-    brain.moloThrown = false
-    brain.waitUntilTick =
-      tactic === 'slow'
-        ? state.tick + Math.round(((3000 + state.rng.float() * 5000) / 1000) * CONFIG.tickRate)
-        : 0
-    brain.nextThrowTick = Math.round(3 * CONFIG.tickRate) // 开局 3s 后才允许投掷
+    brain.smokedThisRound = force ? brain.smokedThisRound : false
+    brain.flashTarget = force ? brain.flashTarget : null
+    brain.moloThrown = force ? brain.moloThrown : false
+    brain.waitUntilTick = force ? 0 : tactic === 'slow' ? state.tick + Math.round(((3000 + state.rng.float() * 5000) / 1000) * CONFIG.tickRate) : 0
+    if (!force) brain.nextThrowTick = Math.round(3 * CONFIG.tickRate) // 开局 3s 后才允许投掷
   })
   ctBots.forEach((p, i) => {
     const brain = ctx.brains.get(p.id)!
@@ -492,28 +500,29 @@ function assignObjectives(state: GameState, ctx: BotContext): void {
     brain.path = null
     brain.reactionUntil = 0
     brain.targetId = null
-    brain.smokedThisRound = false
-    brain.flashTarget = null
-    brain.moloThrown = false
+    brain.smokedThisRound = force ? brain.smokedThisRound : false
+    brain.flashTarget = force ? brain.flashTarget : null
+    brain.moloThrown = force ? brain.moloThrown : false
     brain.waitUntilTick = 0
-    brain.nextThrowTick = Math.round(3 * CONFIG.tickRate)
+    if (!force) brain.nextThrowTick = Math.round(3 * CONFIG.tickRate)
   })
 }
 
-/** 经济决策：freeze 期购买 */
-function botEconomy(state: GameState, events: EventBus): void {
+/** 经济决策：freeze 期购买（阵营分枪：T 系 AK / CT 系 M4）。仅 freeze 前 2s（128 tick，相对起点）内执行 */
+function botEconomy(state: GameState, events: EventBus, freezeStartTick: number): void {
   const r = state.round
-  if (state.tick > 128) return
+  if (state.tick - freezeStartTick > 128) return
   for (const p of state.players) {
     if (!p.isBot) continue
     const streak = r.lossStreak[p.team]
     const wantForce = streak >= 3
-    if (p.team === 'CT' && !p.hasKit && p.money >= 500) {
+    if (p.team === 'CT' && !p.hasKit && p.money >= GEAR_PRICES.kit) {
       buyItem(state, p, 'kit', events)
     }
     if (p.weapons.primary === null) {
-      if (p.money >= WEAPONS.m4.price + 300 || wantForce) {
-        buyItem(state, p, 'm4', events)
+      const rifle = p.team === 'T' ? 'ak' : 'm4'
+      if (p.money >= WEAPONS[rifle].price + 300 || wantForce) {
+        buyItem(state, p, rifle, events)
       } else if (p.money >= WEAPONS.mp9.price) {
         buyItem(state, p, 'mp9', events)
       }
@@ -524,7 +533,7 @@ function botEconomy(state: GameState, events: EventBus): void {
     if (p.armor === 0 && (wantForce || p.money >= 4000) && p.money >= 1650) {
       buyItem(state, p, 'kevlarHelmet', events)
     }
-    // 投掷物：T 买高爆+闪光+烟雾，CT 买闪光+烟雾+燃烧
+    // 投掷物：T 买高爆+闪光+烟雾，CT 买闪光+烟雾+燃烧（阵营限购由 buyItem 兜底）
     if (p.team === 'T') {
       if (!p.weapons.grenades[0] && p.money >= WEAPONS.he.price) buyItem(state, p, 'he', events)
       if (!p.weapons.grenades[1] && p.money >= WEAPONS.flash.price) buyItem(state, p, 'flash', events)

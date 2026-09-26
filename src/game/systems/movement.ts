@@ -29,11 +29,12 @@ export function updatePlayerMovement(
 ): void {
   const inp = p.input
 
-  // #8 ADS：开镜武器右键瞄准时降敏 + 减速
+  // #8 ADS：开镜武器右键瞄准时降敏 + 减速（开镜灵敏度按倍率反比缩放，见 weapons.zoom.sensScales）
   const activeW = activeWeapon(p)
   const zoomDef = activeW ? WEAPONS[activeW.defId].zoom : undefined
   const aiming = inp.aimHeld && !!zoomDef
-  const sensScale = aiming ? (zoomDef as { sensScale: number }).sensScale : 1
+  const zoomStage = p.aimStage > 0 ? p.aimStage : aiming ? 1 : 0
+  const sensScale = aiming && zoomDef ? (zoomDef.sensScales?.[zoomStage - 1] ?? zoomDef.sensScale) : 1
 
   // 视角
   p.yaw -= inp.mouseDX * CONFIG.mouseSens * mouseSensScale * sensScale
@@ -50,6 +51,8 @@ export function updatePlayerMovement(
       ? CONFIG.walkSpeed
       : CONFIG.moveMaxSpeed
   if (aiming) wishSpeed *= 0.4
+  // 武器移速系数（CS 2018 起全枪 1.0，字段保留给武器表驱动）
+  if (activeW) wishSpeed *= WEAPONS[activeW.defId].moveSpeedScale
 
   // 期望方向（相对视角）
   const fx = -Math.sin(p.yaw)
@@ -70,29 +73,45 @@ export function updatePlayerMovement(
   // 梯子判定（决定本 tick 是否走攀爬逻辑）
   p.onLadder = isOnLadder(p, height, level)
 
-  // 摩擦
-  const fric = p.onGround ? CONFIG.groundFriction : CONFIG.airFriction
-  const decay = Math.max(0, 1 - fric * dt)
-  p.velocity.x *= decay
-  p.velocity.z *= decay
-
-  // 水平加速（梯子上不推进）
-  if (!p.onLadder && (wx !== 0 || wz !== 0)) {
-    const cur = p.velocity.x * wx + p.velocity.z * wz
-    if (p.onGround) {
-      if (cur < wishSpeed) {
-        const add = Math.min(CONFIG.groundAccel * dt * wishSpeed, wishSpeed - cur)
-        p.velocity.x += wx * add
-        p.velocity.z += wz * add
+  // 摩擦 + 水平加速（CS 模型：有输入时仅垂直于期望方向的分量衰减，平行分量加速至 wishSpeed；
+  // 无输入时全速衰减，地面带 stopSpeed 地板）
+  if (!p.onLadder) {
+    if (wx !== 0 || wz !== 0) {
+      const cur = p.velocity.x * wx + p.velocity.z * wz
+      const px = p.velocity.x - cur * wx
+      const pz = p.velocity.z - cur * wz
+      const perps = Math.hypot(px, pz)
+      let pScale = 0
+      if (perps > 1e-6) {
+        if (p.onGround) {
+          pScale = perps > CONFIG.groundStopSpeed * dt ? Math.max(0, 1 - CONFIG.groundFriction * dt) : 0
+        } else {
+          pScale = Math.max(0, 1 - CONFIG.airFriction * dt)
+        }
       }
-    } else if (cur < CONFIG.airMaxSpeed) {
-      const add = Math.min(
-        CONFIG.airAccel * dt * CONFIG.airMaxSpeed,
-        CONFIG.airMaxSpeed - cur,
-        CONFIG.airSpeedCap,
-      )
-      p.velocity.x += wx * add
-      p.velocity.z += wz * add
+      let newCur = cur
+      if (p.onGround) {
+        if (cur < wishSpeed) newCur = cur + Math.min(CONFIG.groundAccel * dt * wishSpeed, wishSpeed - cur)
+      } else if (cur < CONFIG.airMaxSpeed) {
+        newCur =
+          cur +
+          Math.min(CONFIG.airAccel * dt * CONFIG.airMaxSpeed, CONFIG.airMaxSpeed - cur, CONFIG.airSpeedCap)
+      }
+      p.velocity.x = px * pScale + wx * newCur
+      p.velocity.z = pz * pScale + wz * newCur
+    } else {
+      const hs = Math.hypot(p.velocity.x, p.velocity.z)
+      if (hs > 1e-6) {
+        let s: number
+        if (p.onGround) {
+          const stop = CONFIG.groundStopSpeed * dt
+          s = hs > stop ? Math.max(0, 1 - CONFIG.groundFriction * dt) : Math.max(0, hs - stop) / hs
+        } else {
+          s = Math.max(0, 1 - CONFIG.airFriction * dt)
+        }
+        p.velocity.x *= s
+        p.velocity.z *= s
+      }
     }
   }
 
@@ -121,7 +140,7 @@ export function updatePlayerMovement(
     if (p.velocity.y < -CONFIG.maxFallSpeed) p.velocity.y = -CONFIG.maxFallSpeed
   }
 
-  // 实心碰撞（着地 + 竖直吸收）
+  // 实心碰撞（着地 + 竖直吸收 + 台阶上行）
   const wasGrounded = p.onGround
   p.onGround = collideBrushes(
     p.position,
@@ -130,6 +149,7 @@ export function updatePlayerMovement(
     CONFIG.playerRadius,
     level.solids,
     dt,
+    CONFIG.stepHeight,
   )
   if (p.onGround) {
     p.velocity.y = 0

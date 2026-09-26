@@ -11,6 +11,14 @@ export class HUD {
   private tickEl: HTMLElement
   private weaponEl: HTMLElement | null = null
   private roundEl: HTMLElement | null = null
+  private hpNum: HTMLElement | null = null
+  private apNum: HTMLElement | null = null
+  private hpBar: HTMLElement | null = null
+  private apBar: HTMLElement | null = null
+  private ammoD: HTMLElement | null = null
+  private ammoR: HTMLElement | null = null
+  private nadeEls: HTMLElement[] = []
+  private bigTimer: HTMLElement | null = null
   private lastTextUpdate = 0
 
   constructor(root: HTMLElement) {
@@ -21,14 +29,45 @@ export class HUD {
     this.tickEl = root.querySelector('#tick') as HTMLElement
     this.weaponEl = root.querySelector('#weapon')
     this.roundEl = root.querySelector('#round')
+    this.hpNum = root.querySelector('#hpnum')
+    this.apNum = root.querySelector('#apnum')
+    this.hpBar = root.querySelector('#vitals .vbar.hp i')
+    this.apBar = root.querySelector('#vitals .vbar.ap i')
+    this.ammoD = root.querySelector('#ammod')
+    this.ammoR = root.querySelector('#ammore')
+    this.nadeEls = Array.from(root.querySelectorAll('#nades i'))
+    this.bigTimer = root.querySelector('#bigtimer')
   }
 
   update(state: GameState, fps: number, locked: boolean, nowMs: number): void {
     this.crosshairEl.style.visibility = locked ? 'visible' : 'hidden'
     this.hintEl.style.display = locked ? 'none' : 'block'
+    const p = state.players[0]
+
+    // CS 风读数：血/甲条 + 弹药 + 投掷物 + 大号计时（每帧驱动，廉价的 textContent 更新）
+    if (this.hpNum) {
+      const hp = Math.max(0, Math.ceil(p.health))
+      this.hpNum.textContent = String(hp)
+      this.hpNum.classList.toggle('low', p.health < 30)
+      this.hpBar!.style.width = `${(hp / CONFIG.healthMax) * 100}%`
+      const ap = p.armor > 0 ? Math.ceil(p.armor) : 0
+      this.apNum!.textContent = ap > 0 ? String(ap) : '—'
+      this.apBar!.style.width = `${ap}%`
+      const w = activeWeapon(p)
+      const wdef = w ? WEAPONS[w.defId] : undefined
+      this.ammoD!.textContent = w ? String(w.ammoMag) : '—'
+      this.ammoR!.textContent = w && wdef && wdef.magazine > 0 ? String(w.ammoReserve) : ''
+      const gLabels = ['雷', '闪', '烟', '燃']
+      this.nadeEls.forEach((el, i) => {
+        const inst = p.weapons.grenades[i]
+        el.classList.toggle('empty', !inst)
+        el.textContent = inst ? `${gLabels[i] ?? ''}${inst.ammoMag > 1 ? '×' + inst.ammoMag : ''}` : (gLabels[i] ?? '')
+      })
+      this.updateBigTimer(state)
+    }
+
     if (nowMs - this.lastTextUpdate < 125) return
     this.lastTextUpdate = nowMs
-    const p = state.players[0]
     const speed = Math.hypot(p.velocity.x, p.velocity.z)
     const gear = `${p.armor > 0 ? ` AP ${p.armor}` : ''}${p.helmet ? ' [HLM]' : ''}`
     this.statusEl.textContent = [
@@ -58,6 +97,32 @@ export class HUD {
     this.fpsEl.textContent = String(fps)
     this.tickEl.textContent = String(state.tick)
   }
+  /** 中央大号计时：冻结=BUY 计时 / live=回合剩余 / C4=红色倒计时；其他阶段隐藏 */
+  private updateBigTimer(state: GameState): void {
+    if (!this.bigTimer) return
+    const r = state.round
+    let text = ''
+    let danger = false
+    if (state.mode === 'de') {
+      if (r.phase === 'freeze') {
+        text = `BUY ${Math.max(0, Math.ceil((r.phaseEndTick - state.tick) / CONFIG.tickRate))}`
+      } else if (r.phase === 'live') {
+        text = fmtTime(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate)
+      } else if (r.phase === 'bombPlanted') {
+        text = fmtTime(Math.max(0, r.c4.explodeAtTick - state.tick) / CONFIG.tickRate)
+        danger = true
+      }
+    }
+    this.bigTimer.textContent = text
+    this.bigTimer.style.visibility = text ? 'visible' : 'hidden'
+    this.bigTimer.classList.toggle('danger', danger)
+  }
+}
+
+function fmtTime(sec: number): string {
+  const s = Math.max(0, Math.floor(sec))
+  const m = Math.floor(s / 60)
+  return m > 0 ? `${m}:${String(s % 60).padStart(2, '0')}` : String(s)
 }
 
 export function roundLine(state: GameState): string {

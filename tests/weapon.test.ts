@@ -147,30 +147,40 @@ describe('weapon system', () => {
 })
 
 describe('shot damage formula', () => {
-  it('头部 4 倍率', () => {
-    const d = shotDamage(WEAPONS.awp, 'head', 0, 0)
-    expect(d).toBeCloseTo(WEAPONS.awp.damage * 4, 1)
+  it('逐枪头部倍率（M4 4x / AWP 2.3x）', () => {
+    const m4 = shotDamage(WEAPONS.m4, 'head', 0, 0)
+    expect(m4.damage).toBeCloseTo(WEAPONS.m4.damage * 4, 1)
+    const awp = shotDamage(WEAPONS.awp, 'head', 0, 0)
+    expect(awp.damage).toBeCloseTo(WEAPONS.awp.damage * (WEAPONS.awp.headMul ?? 4), 1)
   })
-  it('距离衰减（falloffStart 后线性至 rangeModifier）', () => {
+  it('距离衰减（falloffStart 后线性至 rangeModifier，刻度为地图尺度 1300-4000u）', () => {
     const m4 = WEAPONS.m4
     const near = shotDamage(m4, 'chest', 0, 0)
-    const mid = shotDamage(m4, 'chest', 550, 0)
-    const far = shotDamage(m4, 'chest', 1000, 0)
-    expect(near).toBeCloseTo(30, 1)
-    expect(mid).toBeCloseTo(30 * 0.925, 1)
-    expect(far).toBeCloseTo(30 * 0.85, 1)
+    const mid = shotDamage(m4, 'chest', 2000, 0)
+    const far = shotDamage(m4, 'chest', 4000, 0)
+    expect(near.damage).toBeCloseTo(30, 1)
+    expect(mid.damage).toBeGreaterThan(far.damage)
+    expect(mid.damage).toBeLessThan(near.damage)
+    // 衰减地板 = rangeModifier
+    expect(far.damage).toBeCloseTo(m4.damage * m4.rangeModifier, 1)
   })
 
-  it('护甲减免非头部伤害（按穿透系数）', () => {
+  it('护甲池模型：非头部命中吸收 50%（受甲池约束），返回 armorLost', () => {
     const m4 = WEAPONS.m4
     const noArmor = shotDamage(m4, 'chest', 0, 0)
     const withArmor = shotDamage(m4, 'chest', 0, 100)
-    expect(withArmor).toBeCloseTo(noArmor * (1 - 0.5 * (1 - m4.armorPenetration)), 1)
+    expect(noArmor.damage).toBeCloseTo(30, 1)
+    expect(withArmor.damage).toBeCloseTo(15, 1)
+    expect(withArmor.armorLost).toBeCloseTo(15, 1)
+    // 甲池耗尽后不再减伤
+    const lowArmor = shotDamage(m4, 'chest', 0, 5)
+    expect(lowArmor.damage).toBeCloseTo(30 - 5, 1)
+    expect(lowArmor.armorLost).toBeCloseTo(5, 1)
   })
 
-  it('腿部 0.7 倍率', () => {
+  it('腿部 0.5 倍率（CS 四肢减伤）', () => {
     const d = shotDamage(WEAPONS.glock, 'legs', 100, 0)
-    expect(d).toBeCloseTo(WEAPONS.glock.damage * 0.7, 1)
+    expect(d.damage).toBeCloseTo(WEAPONS.glock.damage * 0.5, 1)
   })
 })
 
@@ -258,7 +268,7 @@ describe('新枪行为 (M8)', () => {
     expect(state.targets[0].health).toBeLessThan(100 - 60)
   })
 
-  it('大雕爆头 53×4 近距秒杀 100 血目标', () => {
+  it('大雕爆头（53×2.18≈116）近距秒杀 100 血目标', () => {
     const { state, p } = makeState()
     const events = new EventBus()
     state.targets = [makeTarget(0, 0, 0, -200)]
@@ -271,34 +281,33 @@ describe('新枪行为 (M8)', () => {
   })
 })
 
-describe('#8 ADS 散布规则', () => {
-  it('狙击未开镜（noscope）散布 = 站定值 + 8° 惩罚；开镜 = 站定值', () => {
+describe('#8 ADS 散布规则（连续化：站定基础 + 速度比例 + 连射衰减）', () => {
+  it('站定 = 站定基础值（noscope 无惩罚，对标 CS）', () => {
     const { p } = makeState()
     p.onGround = true
     p.velocity = v3(0, 0, 0)
-    const awp = WEAPONS.awp
-    const stand = awp.spreadDeg.stand
-    expect(spreadDegrees(p, awp, false)).toBeCloseTo(stand + 8, 5)
-    expect(spreadDegrees(p, awp, true)).toBeCloseTo(stand, 5)
-  })
-
-  it('无 zoom 武器不受开镜状态影响', () => {
-    const { p } = makeState()
-    p.onGround = true
-    p.velocity = v3(0, 0, 0)
-    const m4 = WEAPONS.m4
-    expect(m4.zoom).toBeUndefined()
-    expect(spreadDegrees(p, m4, false)).toBe(m4.spreadDeg.stand)
-    expect(spreadDegrees(p, m4, true)).toBe(m4.spreadDeg.stand)
-  })
-
-  it('noscope 散布严格大于开镜散布', () => {
-    const { p } = makeState()
-    p.onGround = true
-    p.velocity = v3(0, 0, 0)
-    for (const def of [WEAPONS.awp, WEAPONS.ssg08]) {
-      expect(spreadDegrees(p, def, false)).toBeGreaterThan(spreadDegrees(p, def, true))
+    for (const def of [WEAPONS.awp, WEAPONS.ssg08, WEAPONS.m4]) {
+      expect(spreadDegrees(p, def, false)).toBeCloseTo(def.spreadDeg.stand, 5)
+      expect(spreadDegrees(p, def, true)).toBeCloseTo(def.spreadDeg.stand, 5)
     }
+  })
+
+  it('移动散布按速度连续插值（地面 250 / 空中 325）', () => {
+    const { p } = makeState()
+    p.onGround = true
+    p.velocity = v3(125, 0, 0)
+    const half = spreadDegrees(p, WEAPONS.m4, false)
+    p.velocity = v3(250, 0, 0)
+    const full = spreadDegrees(p, WEAPONS.m4, false)
+    expect(full - half).toBeCloseTo(WEAPONS.m4.spreadDeg.move * 0.5, 1)
+  })
+
+  it('连射增量计入散布并可用 fireSpread 模拟', () => {
+    const { p } = makeState()
+    p.onGround = true
+    p.velocity = v3(0, 0, 0)
+    p.fireSpread = 4
+    expect(spreadDegrees(p, WEAPONS.m4, false)).toBeCloseTo(WEAPONS.m4.spreadDeg.stand + 4, 1)
   })
 })
 
@@ -308,8 +317,8 @@ describe('#4 结算统计埋点', () => {
     const events = new EventBus()
     const victim = state.players[1]
     victim.position = v3(0, 0, -200)
-    // 200u 处 AWP：身体约 100 伤（200 血不致死）、头部 4 倍（约 446 必杀）→ 只有爆头击杀才置位 headshotKills
-    victim.health = 200
+    // 200u 处 AWP：身体 50（无衰减）、头部 115（50×2.3）→ 100 血目标只有爆头一击必杀
+    victim.health = 100
     p.weapons.primary = newWeaponInstance('awp')
     p.activeSlot = 0
     p.pitch = 0.003 // 微调抬头，射线对准 300u 处头部中心（y≈65，眼高 64）
@@ -341,6 +350,30 @@ describe('#4 结算统计埋点', () => {
     expect(victim.alive).toBe(false)
     expect(p.kills).toBe(6)
     expect(p.firstKills).toBe(1) // 保持不变
+  })
+})
+
+describe('击杀赏金 $1500/回合上限（CS kill reward cap）', () => {
+  it('连续击杀到 5 次封顶，第 6 次不再入账', () => {
+    const { state, p } = makeState()
+    const events = new EventBus()
+    const money0 = p.money
+    const victim = state.players[1]
+    p.weapons.secondary = newWeaponInstance('glock')
+    p.activeSlot = 1
+    state.round.phase = 'live'
+    let tick = 0
+    for (let i = 0; i < 6; i++) {
+      victim.alive = true
+      victim.health = 10
+      victim.position = v3(0, 0, -200)
+      p.input = { ...emptyInput(), fireQueued: true }
+      state.tick = tick
+      fireWeapon(state, p, prepped, events)
+      tick += 32
+    }
+    expect(p.roundKillReward).toBe(CONFIG.killRewardCap)
+    expect(p.money).toBe(money0 + CONFIG.killRewardCap)
   })
 })
 

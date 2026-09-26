@@ -1,6 +1,7 @@
 import { CONFIG } from './config'
-import { WEAPONS, newWeaponInstance } from './weapons'
+import { WEAPONS, newWeaponInstance, type WeaponDef } from './weapons'
 import type { GameState, PlayerEntity } from './state'
+import { inBuyZone, type PreppedLevel } from './physics/collision'
 import type { EventBus } from '../engine/eventbus'
 import type { Team } from './types'
 
@@ -34,7 +35,7 @@ export function settleRoundEconomy(state: GameState): void {
   }
 }
 
-/** 购买窗口：freeze 全程 + live 前 buyTimeMs */
+/** 购买窗口：freeze 全程 + live 前 buyTimeMs（CS：5s 冻结 + 5s = 10s） */
 export function canBuyNow(state: GameState): boolean {
   const r = state.round
   if (r.phase === 'freeze') return true
@@ -46,11 +47,25 @@ export function canBuyNow(state: GameState): boolean {
   return false
 }
 
-/** 购买（仅时间窗口内，M4 加出生区限制） */
-export function buyItem(state: GameState, p: PlayerEntity, itemId: string, events: EventBus): boolean {
+/** 阵营限购（CS）：CT 不卖燃烧瓶；T 不卖拆弹钳。手枪轮（首回合）只允许刀/手枪/装备。 */
+function buyAllowed(p: PlayerEntity, state: GameState, def: WeaponDef | null, itemId: string): boolean {
+  if (itemId === 'kit' && p.team !== 'CT') return false
+  if (itemId === 'molotov' && p.team !== 'T') return false
+  if (state.mode !== 'de' || !CONFIG.pistolRound || state.round.roundNumber !== 1) return true
+  const isGear = itemId === 'kit' || itemId === 'kevlar' || itemId === 'kevlarHelmet'
+  if (isGear || def?.category === 'knife' || def?.category === 'pistol') return true
+  return false
+}
+
+/** 购买（时间窗口 + 出生区买区 + 阵营限购 + 手枪轮限制） */
+export function buyItem(state: GameState, p: PlayerEntity, itemId: string, events: EventBus, level?: PreppedLevel): boolean {
   if (!canBuyNow(state)) return false
+  // CS：只能在本方出生区（买区）内购买
+  if (state.mode === 'de' && level && !inBuyZone(level, p.team, p.position.x, p.position.z)) return false
+  const def = WEAPONS[itemId] ?? null
+  if (!buyAllowed(p, state, def, itemId)) return false
   if (itemId === 'kit') {
-    const cost = 500
+    const cost = GEAR_PRICES.kit
     if (p.money < cost || p.hasKit) return false
     p.money -= cost
     p.hasKit = true
@@ -67,7 +82,6 @@ export function buyItem(state: GameState, p: PlayerEntity, itemId: string, event
     events.emit({ type: 'shot', shooterId: p.id, weaponId: itemId })
     return true
   }
-  const def = WEAPONS[itemId]
   if (!def || def.price <= 0) return false
   if (p.money < def.price) return false
   p.money -= def.price
@@ -95,7 +109,7 @@ function slotFor(defId: string): 'primary' | 'secondary' {
   return 'primary'
 }
 
-/** 回合开始重置装备：败方保留手枪+刀，胜方保留装备（弹药回满） */
+/** 回合开始重置装备：败方保留阵营默认手枪+刀（T=Glock / CT=USP-S），胜方保留装备（弹药回满） */
 export function resetEquipment(state: GameState): void {
   const winner = state.round.lastWinner
   for (const p of state.players) {
@@ -110,7 +124,7 @@ export function resetEquipment(state: GameState): void {
       }
     } else {
       p.weapons.primary = null
-      p.weapons.secondary = newWeaponInstance('glock')
+      p.weapons.secondary = newWeaponInstance(p.team === 'CT' ? 'usp' : 'glock')
       p.weapons.knife = newWeaponInstance('knife')
       p.weapons.grenades = [null, null, null, null]
       p.activeSlot = 1

@@ -407,6 +407,131 @@ body {
   border-radius: 3px;
   letter-spacing: 0.04em;
 }
+/* ===== CS 风核心读数（血甲条 / 弹药大数字 / 投掷物槽 / 大号计时） ===== */
+#bigtimer {
+  position: absolute;
+  left: 50%;
+  top: 44px;
+  transform: translateX(-50%);
+  font-size: 44px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
+  opacity: 0.9;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+#bigtimer.danger {
+  color: #ff5a4a;
+}
+#vitals {
+  position: absolute;
+  left: 12px;
+  bottom: 58px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+#hprow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+#hpnum {
+  font-size: 34px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+#hpnum.low {
+  color: #ff5a4a;
+}
+#apnum {
+  font-size: 20px;
+  font-weight: 600;
+  color: #8fc0ff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+.vbar {
+  width: 170px;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.vbar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: #e0342c;
+  transition: width 0.15s linear;
+}
+.vbar.ap i {
+  background: #5a90d0;
+}
+#nades {
+  position: absolute;
+  left: 12px;
+  bottom: 132px;
+  display: flex;
+  gap: 5px;
+  pointer-events: none;
+}
+#nades i {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: 12px;
+  color: #e8e8e8;
+}
+#nades i.empty {
+  opacity: 0.25;
+}
+#ammopanel {
+  position: absolute;
+  right: 14px;
+  bottom: 52px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  pointer-events: none;
+}
+#ammod {
+  font-size: 36px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+#ammore {
+  font-size: 16px;
+  font-weight: 600;
+  color: #b8c4d4;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+/* 触控端：读数上移，避开虚拟摇杆/动作键 */
+@media (pointer: coarse) {
+  #vitals {
+    bottom: 150px;
+  }
+  #nades {
+    bottom: 224px;
+  }
+  #ammopanel {
+    bottom: 170px;
+  }
+}
 #roundmsg {
   position: absolute;
   left: 50%;
