@@ -52,7 +52,7 @@
 - Context: Agent 完成 44 项 backlog 全量开发
 - Category: 构建方法
 - Instructions:
-  - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**；2026-09-26 P0 差距修复批次（手感/武器/规则/HUD/Bot，commit a08c047）后 111 → **118**；P1+美术批次（渲染 PBR/ACES/IBL + 法线 + 烟雾 + bot 预投 + MVP + 10000-tick 确定性 tests/determinism.test.ts）后 118 → **120**（`npx vitest run` 全绿为验收线，16 个测试文件）。
+  - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**；2026-09-26 P0 差距修复批次（手感/武器/规则/HUD/Bot，commit a08c047）后 111 → **118**；P1+美术批次（渲染 PBR/ACES/IBL + 法线 + 烟雾 + bot 预投 + MVP + 确定性/预投单测，commit ee04da3）后 118 → **121**（`npx vitest run` 全绿为验收线，16 个测试文件）。
   - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 60 项（models/textures 含 6 张法线，总包 ~30.5MB）；dev 模式 PWA 不生效。
   - 渲染管线已升级 PBR：ACESFilmicToneMapping + sRGB + RoomEnvironment PMREM IBL + 8×PointLight 动态光池（爆炸/闪光/枪口，`renderer.addFlashLight`/`updateDynLights`）+ 法线贴图（`{key}_n` 键）+ 阴影 2048/4096 分档。人物/地图用 MeshStandardMaterial（IBL 下不发黑）。
   - 地图现为 3 张：`de_sahara`（默认）/`de_plaza`（第二张对战图）/`training`（训练场），注册在 `src/game/map/match.ts` 的 `MAP_BUILDERS`；新增图需在该表登记 + routes.test.ts 加路由回归。
