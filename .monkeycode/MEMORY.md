@@ -51,8 +51,8 @@
 - Context: Agent 完成 44 项 backlog 全量开发
 - Category: 构建方法
 - Instructions:
-  - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**（`npx vitest run` 全绿为验收线，16 个测试文件）。
-  - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 46 项（models/textures，上限 4MB 因 character.glb 3.25MB）；dev 模式 PWA 不生效。
+  - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**；2026-09-26 P0 差距修复批次（手感/武器/规则/HUD/Bot，commit a08c047）后 111 → **118**（`npx vitest run` 全绿为验收线，15 个测试文件）。
+  - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 48 项（models/textures，总包 ~22.5MB）；dev 模式 PWA 不生效。
   - 地图现为 3 张：`de_sahara`（默认）/`de_plaza`（第二张对战图）/`training`（训练场），注册在 `src/game/map/match.ts` 的 `MAP_BUILDERS`；新增图需在该表登记 + routes.test.ts 加路由回归。
 
 ### [环境限制: headless 游戏 tick 速约为墙钟 5–7x]
@@ -62,4 +62,6 @@
 - Instructions:
   - 沙箱 headless 下 requestAnimationFrame 时间戳漂移，游戏固定 tick（`CONFIG.tickRate`）跑约 5–7x 墙钟速（实测 40ms 墙钟 ≈ 29 tick）。所有"冷却/淡出/倒计时"类时间窗断言或截图时机要按此换算，或直接按 tick 计数（`state.tick`）而非墙钟 sleep。
   - 走查脚本（如 `/tmp/opencode/shots.mjs`）里 `sleep(ms)` 后要留足 7x 余量；拾取冷却等常量（60 tick）在 headless 下 ≈130ms 墙钟即过。
-  - `window.__game`（DEV-only）暴露 `state()/tickOnce()/nav/events/renderer/textures/bulletPool/scorchPool/shotPool/input`，可无鼠标驱动走查（`input` 的边沿键 G/R/B 与移动键在 CDP keydown 下生效，但 fireHeld/aimHeld 因无指针锁恒 false）。
+  - `window.__game`（DEV-only）暴露 `state()/tickOnce()/nav/level/events/renderer/textures/bulletPool/scorchPool/shotPool/input/buy(itemId)`，可无鼠标驱动走查（`input` 的边沿键 G/R/B 与移动键在 CDP keydown 下生效，但 fireHeld/aimHeld 因无指针锁恒 false）。
+  - 注入玩家输入的正确方式：包一层 `g.input.poll`（`g.input.poll = () => { const f = orig(); f.forward = 1; return f }`），用完 `delete g.input.poll` 还原——直接给 `p.input` 赋值无效（`stepLogic` 每 tick 用 `input.poll()` 的结果覆盖 `players[0].input`）。自然 rAF 循环在后台 tab 几乎不 tick，确定性走查要显式 `g.tickOnce()` 驱动。
+  - 台阶碰撞（`step-up`）行为注意：de_sahara 的"三级台阶"是 y∈[0,16/32/48] 的实心 slab 堆叠，玩家 48u 宽 footprint 在台阶区会同时压住多级 slab，Y_TOLERANCE=24 磁吸会沿 brush 列表级联抬升（0→16→32），probe 读数易混；台阶逻辑验证用 `tests/movement.test.ts` 的合成 step18/step32 用例（干净几何）为准。
