@@ -132,7 +132,13 @@ function killPlayer(state: GameState, victim: (typeof state.players)[number], at
     const killer = state.players[attackerId]
     if (killer) {
       killer.kills += 1
-      grantKillReward(killer, WEAPONS[weaponId]?.killReward ?? 300)
+      killer.roundKills += 1
+      const remaining = CONFIG.killRewardCap - killer.roundKillReward
+      if (remaining > 0) {
+        const amount = Math.min(WEAPONS[weaponId]?.killReward ?? 300, remaining)
+        killer.roundKillReward += amount
+        grantKillReward(killer, amount)
+      }
     }
   }
   if (state.round.c4.state === 'carried' && state.round.c4.carrierId === victim.id) {

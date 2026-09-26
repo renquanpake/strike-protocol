@@ -237,6 +237,30 @@ describe('#20 Bot 购买与投掷闪光弹', () => {
     expect(bot.weapons.grenades[0]?.defId).toBe('he')
   })
 
+  it('T bot 推进途中预投封烟（radio smokeOut，每 bot 每回合 1 颗）', () => {
+    const { state, prepped, nav, events, ctx } = makeWorld()
+    state.round.phase = 'freeze'
+    state.round.roundNumber = 2 // 跳过首回合手枪轮，bot 购买装备（含 smoke）
+    state.tick = 0
+    const bot = state.players[1] // T-1
+    bot.money = 5000
+    updateBots(state, prepped, nav, ctx, events, DT)
+    expect(bot.weapons.grenades[2]?.defId).toBe('smoke')
+    const brain = ctx.brains.get(1)!
+    expect(brain.objective).toBeTruthy()
+    // 进入 live：T bot 沿路径推进，距目标 >300u 时向爆点封烟
+    state.round.phase = 'live'
+    state.round.phaseEndTick = Infinity
+    let smokeOut = 0
+    events.on('radio', (m) => {
+      if (m.key === 'smokeOut') smokeOut += 1
+    })
+    sim(state, ctx, prepped, nav, events, 1200)
+    expect(smokeOut).toBeGreaterThanOrEqual(1)
+    expect(brain.preSmoke).toBe(true)
+    expect(bot.weapons.grenades[2]?.ammoMag).toBeLessThan(1)
+  })
+
   it('flash 投掷：首发现目标且 <500u 时抛出闪光弹', () => {
     const { state, prepped, nav, events, ctx } = makeWorld()
     ctx.processedRound = 1

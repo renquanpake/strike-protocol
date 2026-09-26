@@ -1,5 +1,29 @@
 [
   {
+    "file": "concrete_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: weathered concrete wall panel with thin dark panel seams forming large squares, faint horizontal formwork lines, minor surface pitting and dust. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "wood_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: worn wooden floor planks, vertical plank boards with thin grooves between planks, fine wood grain lines, light scuffs and scratches. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "sand_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: dry sandy desert dirt ground, fine granular sand grain, sparse small pebbles, subtle dry cracks, worn outdoor terrain. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "stone_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: weathered desert sandstone masonry wall, rough cut stone blocks with thin darker mortar joints in offset rows, sun-bleached patches, minor erosion pitting. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "rusted_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: weathered rusted metal shipping container wall, vertical corrugated panels, flaky rust patches, faded paint, rivets. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "sandbag_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: stacked sandbag wall, overlapping soft rounded burlap sandbags in a running-bond stack, coarse burlap weave texture, dusty and dry. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
     "file": "stone",
     "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: weathered desert sandstone masonry wall, warm tan-gold stone #c9a878, rough cut block masonry with thin darker mortar joints in offset rows, sun-bleached patches, minor erosion pitting, dusty, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
   },

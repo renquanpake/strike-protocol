@@ -90,6 +90,8 @@ export interface PlayerEntity {
   fireSpread: number
   /** 本回合击杀赏金累计（$1500/回合上限用） */
   roundKillReward: number
+  /** 本回合击杀数（回合间歇 MVP 展示用，enterFreeze 清零） */
+  roundKills: number
   /** 本 tick 输入（Bot 为合成输入） */
   input: InputFrame
 }
@@ -226,6 +228,7 @@ export function makePlayer(
     aimStage: 0,
     fireSpread: 0,
     roundKillReward: 0,
+    roundKills: 0,
     input: emptyInput(),
   }
 }

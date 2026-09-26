@@ -299,6 +299,7 @@ function applyPlayerHit(
     victim.deaths += 1
     victim.deathTick = state.tick
     shooter.kills += 1
+    shooter.roundKills += 1
     if (headshot) shooter.headshotKills += 1
     // 首杀：该玩家本局（tick 内）尚无击杀即为本回合开局击杀——简化用本局首个 kill
     if (shooter.kills === 1) shooter.firstKills += 1

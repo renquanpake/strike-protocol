@@ -135,14 +135,15 @@ export class Feedback {
   addRadio(team: 'T' | 'CT', key: string, name: string): void {
     const div = document.createElement('div')
     div.className = `rq team-${team}`
-    const map: Record<string, string> = {
-      bombPlanted: t('radio.planted'),
-      bombDefused: t('radio.defused'),
-      enemySpotted: t('radio.spotted'),
-      needBackup: t('radio.backup'),
-      flashOut: t('radio.flash'),
-      niceShot: t('radio.nice'),
-    }
+      const map: Record<string, string> = {
+        bombPlanted: t('radio.planted'),
+        bombDefused: t('radio.defused'),
+        enemySpotted: t('radio.spotted'),
+        needBackup: t('radio.backup'),
+        flashOut: t('radio.flash'),
+        smokeOut: t('radio.smoke'),
+        niceShot: t('radio.nice'),
+      }
     div.textContent = `${name}: ${map[key] ?? '…'}`
     this.radio.appendChild(div)
     while (this.radio.children.length > 3) this.radio.removeChild(this.radio.firstChild as Node)

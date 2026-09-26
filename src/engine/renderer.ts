@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { Vec3 } from './math'
 import type { TextureMap } from './textures'
 
@@ -27,11 +28,11 @@ export interface TargetDef {
 
 const TARGET_PART_COLORS = [0xc0392b, 0xa93226, 0xa93226, 0x7b241c, 0x641e16]
 
-/** 人物阵营配色：保留原贴图，用强阵营 tint 相乘做到"警察蓝 / 匪沙色"一眼可辨（键 = 阵营 accent）。
- *  body=身体贴图乘色；head=头部/盔/面罩；glow=阴影兜底自发光（同时是阵营识别色） */
+/** 人物阵营配色：保留原贴图真实质感，用柔和阵营 tint 相乘（警冷蓝 / 匪暖沙）；
+ *  强识别交给地面阵营光环 + 雷达点色 + 自发光 glow。键 = 阵营 accent */
 const CHAR_TINTS: Record<number, { body: number; head: number; glow: number }> = {
-  0xc8862a: { body: 0xd89a58, head: 0x4a3524, glow: 0xff7a1a }, // T 匪：沙漠沙色 + 深褐头巾
-  0x3f6fae: { body: 0x3f6fd0, head: 0x182642, glow: 0x2f6fd8 }, // CT 警：深蓝警服 + 深蓝警盔
+  0xc8862a: { body: 0xe8d5b0, head: 0x8a7256, glow: 0xff7a1a }, // T 匪：暖沙色服 + 深褐头巾
+  0x3f6fae: { body: 0xbcd0e8, head: 0x4a5a78, glow: 0x2f6fd8 }, // CT 警：冷蓝警服 + 深蓝警盔
 }
 
 export class GameRenderer {
@@ -47,9 +48,17 @@ export class GameRenderer {
     this.resize()
   }
 
-  /** #38：画质档位（低关阴影） */
+  /** #38：画质档位（低关阴影；中 2048 阴影；高 4096 阴影） */
   setQuality(q: 'low' | 'medium' | 'high'): void {
     this.renderer.shadowMap.enabled = q !== 'low'
+    if (this.sunLight) {
+      const size = q === 'high' ? 4096 : 2048
+      if (this.sunLight.shadow.map) {
+        this.sunLight.shadow.map.dispose()
+        ;(this.sunLight.shadow as unknown as { map: null }).map = null
+      }
+      this.sunLight.shadow.mapSize.set(size, size)
+    }
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh
       if (m.isMesh) m.castShadow = q !== 'low'
@@ -61,8 +70,16 @@ export class GameRenderer {
     this.renderer.setPixelRatio(this.dprCap)
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    // CS:GO 级画面基调：ACES 色调映射 + sRGB 输出（亮而不发灰，高光有电影感）
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.12
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.scene = new THREE.Scene()
     this.camera = new THREE.PerspectiveCamera(fov, 1, 0.5, 12000)
+    // IBL 环境：PBR(Standard) 材质需要环境反射才能不发黑（RoomEnvironment PMREM）
+    const pmrem = new THREE.PMREMGenerator(this.renderer)
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    pmrem.dispose()
     // WebGL context 恢复后，three.js 自动重建程序/渲染器但不重传 skinned mesh 的
     // boneTexture（DataTexture），会导致蒙皮人物消失。切 tab / GPU 重置同样触发，
     // 故在 restored 时强制重传所有骨骼纹理。
@@ -96,7 +113,14 @@ export class GameRenderer {
     this.charMats.clear()
     this.tracers.clear()
     this.particleClouds.clear()
+    this.boxMatCache.clear()
+    this.boxTexCache.clear()
+    for (const l of this.dynLightPool) l.visible = false
   }
+
+  /** 盒子材质/纹理共享缓存（同 repeat 组合复用材质与 GL 纹理实例，消除逐 brush 克隆的 VRAM 浪费） */
+  private boxMatCache = new Map<string, THREE.MeshStandardMaterial>()
+  private boxTexCache = new Map<string, THREE.Texture>()
 
   /** #13 曳光池（THREE.Line，additive） */
   private tracers: Map<string, { line: THREE.Line; mat: THREE.LineBasicMaterial; posAttr: THREE.BufferAttribute }> =
@@ -219,14 +243,60 @@ export class GameRenderer {
     this.camera.updateProjectionMatrix()
   }
 
-  configure(sky: number, fogNear: number, fogFar: number, shadowExtent = 900): void {
+  private sunLight: THREE.DirectionalLight | null = null
+  private dynLightPool: THREE.PointLight[] = []
+  private dynLightUntil: number[] = []
+  private dynLightIdx = 0
+
+  /** 动态点光池（爆炸火光 / 闪光爆点，带 250ms 衰减） */
+  addFlashLight(x: number, y: number, z: number, color: number, intensity: number, lifeMs = 260): void {
+    if (this.dynLightPool.length === 0) {
+      for (let i = 0; i < 8; i++) {
+        const l = new THREE.PointLight(color, 0, 900, 2)
+        l.visible = false
+        this.scene.add(l)
+        this.dynLightPool.push(l)
+        this.dynLightUntil.push(0)
+      }
+    }
+    const i = this.dynLightIdx++ % this.dynLightPool.length
+    const l = this.dynLightPool[i]
+    l.color.setHex(color)
+    l.position.set(x, y, z)
+    l.intensity = intensity
+    l.visible = true
+    this.dynLightUntil[i] = performance.now() + lifeMs
+    // 强度按剩余寿命线性衰减（render 帧里逐帧读）
+    ;(l as unknown as { _peak?: number })._peak = intensity
+    ;(l as unknown as { _lifeMs?: number })._lifeMs = lifeMs
+  }
+
+  /** 每帧衰减动态光（render() 内调用） */
+  private updateDynLights(): void {
+    const now = performance.now()
+    for (let i = 0; i < this.dynLightPool.length; i++) {
+      const l = this.dynLightPool[i]
+      if (!l.visible) continue
+      const remain = this.dynLightUntil[i] - now
+      if (remain <= 0) {
+        l.visible = false
+        l.intensity = 0
+        continue
+      }
+      const peak = (l as unknown as { _peak?: number })._peak ?? 0
+      const life = (l as unknown as { _lifeMs?: number })._lifeMs ?? 260
+      l.intensity = peak * Math.max(0, remain / life)
+    }
+  }
+
+  configure(sky: number, fogNear: number, fogFar: number, shadowExtent = 900, shadowMapSize = 2048): void {
     this.scene.background = new THREE.Color(sky)
     this.scene.fog = new THREE.Fog(sky, fogNear, fogFar)
-    const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x7a705c, 0.85)
-    const sun = new THREE.DirectionalLight(0xfff1cf, 1.6)
+    const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x7a705c, 0.55)
+    const sun = new THREE.DirectionalLight(0xfff1cf, 2.1)
     sun.position.set(800, 1200, 500)
     sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.mapSize.set(shadowMapSize, shadowMapSize)
     const sc = sun.shadow.camera
     sc.left = -shadowExtent
     sc.right = shadowExtent
@@ -236,6 +306,7 @@ export class GameRenderer {
     sc.far = 6000
     sun.shadow.bias = -0.0004
     this.scene.add(hemi, sun)
+    this.sunLight = sun
   }
 
   addGroundGrid(size: number, divisions: number, y: number): void {
@@ -249,15 +320,33 @@ export class GameRenderer {
     const h = max.y - min.y
     const d = max.z - min.z
     const tex = material ? textures?.[material] : undefined
-    const mat = new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity })
-    if (tex) {
-      const t = tex.clone()
-      t.needsUpdate = true
-      t.wrapS = t.wrapT = THREE.RepeatWrapping
-      // 水平取较大跨度（南北向长墙的 z 跨度也算），垂直取高
-      t.repeat.set(Math.max(1, Math.round(Math.max(w, d) / 96)), Math.max(1, Math.round(h / 96)))
-      mat.map = t
-      mat.color.setHex(0xffffff) // 贴图自带颜色
+    const nrm = material ? textures?.[`${material}_n`] : undefined
+    const rx = Math.max(1, Math.round(Math.max(w, d) / 96))
+    const ry = Math.max(1, Math.round(h / 96))
+    // 金属系材质（枪金属/锈蚀/梯子）给金属度，其余哑光
+    const metalish = material === 'metal' || material === 'gun_metal' || material === 'rusted' || material === 'ladder' || material === 'glass'
+    const matKey = `${material ?? 'plain'}_${opacity}_${tex ? rx : 0}x${tex ? ry : 0}_${nrm ? 1 : 0}`
+    let mat = this.boxMatCache.get(matKey)
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: metalish ? 0.55 : 0.95,
+        metalness: metalish ? 0.5 : 0.02,
+        transparent: opacity < 1,
+        opacity,
+      })
+      if (tex) {
+        const t = this.cachedClone(tex, `a:${tex.uuid}_${rx}_${ry}`)
+        mat.map = t
+        mat.color.setHex(0xffffff) // 贴图自带颜色
+      }
+      if (nrm) {
+        const nt = this.cachedClone(nrm, `n:${nrm.uuid}_${rx}_${ry}`)
+        nt.colorSpace = THREE.NoColorSpace
+        mat.normalMap = nt
+        mat.normalScale.set(0.55, 0.55)
+      }
+      this.boxMatCache.set(matKey, mat)
     }
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
     mesh.position.set(min.x + w / 2, min.y + h / 2, min.z + d / 2)
@@ -265,6 +354,20 @@ export class GameRenderer {
     mesh.receiveShadow = true
     this.scene.add(mesh)
     return mesh
+  }
+
+  /** 克隆纹理实例并按 (源纹理, repeat) 缓存共享 */
+  private cachedClone(tex: THREE.Texture, key: string): THREE.Texture {
+    let t = this.boxTexCache.get(key)
+    if (!t) {
+      t = tex.clone()
+      t.needsUpdate = true
+      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      const parts = key.split('_')
+      t.repeat.set(Number(parts[parts.length - 2]), Number(parts[parts.length - 1]))
+      this.boxTexCache.set(key, t)
+    }
+    return t
   }
 
   private targetMeshes: { id: number; group: THREE.Group; parts: THREE.Mesh[]; base: number[] }[] = []
@@ -282,6 +385,8 @@ export class GameRenderer {
       fallDir: number
       /** 阵营色地面光环（T 橙 / CT 蓝），独立于 group，updateHumanoid 里平贴地面跟随 */
       teamRing: THREE.Object3D | null
+      /** 烟雾剪影壳（人物进烟时罩住） */
+      smokeShell: THREE.Mesh | null
     }
   > = new Map()
   private decals: { pool: THREE.Mesh[]; free: number[]; size: number; texture: THREE.Texture }[] = []
@@ -318,8 +423,9 @@ export class GameRenderer {
       gltf.scene.traverse((o) => {
         if (o.name === 'Armature') o.quaternion.identity()
       })
-      // 材质统一转 Lambert（与游戏光照体系一致）：PBR Standard 在无环境贴图场景发黑
-      const matSwap = new Map<THREE.Material, THREE.MeshLambertMaterial>()
+      // 材质保留 PBR（Standard）：场景已有 IBL 环境（RoomEnvironment PMREM），金属/布料有真实质感。
+      // 仅把残留的 Basic/Phong 归一到 Standard，避免发黑。
+      const matSwap = new Map<THREE.Material, THREE.MeshStandardMaterial>()
       gltf.scene.traverse((o) => {
         const mesh = o as THREE.Mesh
         if (!mesh.isMesh) return
@@ -328,7 +434,15 @@ export class GameRenderer {
           let l = matSwap.get(m)
           if (!l) {
             const pbr = m as THREE.MeshStandardMaterial
-            l = new THREE.MeshLambertMaterial({ map: pbr.map ?? undefined })
+            l = new THREE.MeshStandardMaterial({
+              map: pbr.map ?? undefined,
+              normalMap: pbr.normalMap ?? undefined,
+              roughnessMap: pbr.roughnessMap ?? undefined,
+              metalnessMap: pbr.metalnessMap ?? undefined,
+              roughness: pbr.roughness ?? 0.8,
+              metalness: pbr.metalness ?? 0,
+              emissive: new THREE.Color(0x000000),
+            })
             l.name = pbr.name || ''
             matSwap.set(m, l)
           }
@@ -628,6 +742,9 @@ export class GameRenderer {
     add(new THREE.BoxGeometry(18, 18, 18), skinMat, 0, 112, 0)
     // 头盔
     add(new THREE.BoxGeometry(20, 10, 20), accentMat, 0, 120, 0)
+    // 烟雾剪影壳（人物进烟时罩住，模拟烟中轮廓）
+    const shell = this.makeSmokeShell()
+    group.add(shell)
     this.scene.add(group)
     this.humanoids.set(id, {
       group,
@@ -635,7 +752,26 @@ export class GameRenderer {
       fallStart: 0,
       fallDir: Math.random() < 0.5 ? -1 : 1,
       teamRing: this.makeTeamRing(accent),
+      smokeShell: shell,
     })
+  }
+
+  /** 烟雾剪影壳：半透明白雾圆柱罩（默认隐藏） */
+  private makeSmokeShell(): THREE.Mesh {
+    const shell = new THREE.Mesh(
+      new THREE.CylinderGeometry(34, 40, 150, 12, 1, true),
+      new THREE.MeshLambertMaterial({
+        color: 0xd8dee4,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    )
+    shell.position.y = 75
+    shell.visible = false
+    shell.renderOrder = 5
+    return shell
   }
 
   /** 蒙皮人物实例：克隆模板 + 阵营纯色身体 + 头部中性提亮 + idle/jog/death 动画状态（#30 按阵营选模板） */
@@ -665,15 +801,15 @@ export class GameRenderer {
           if (/eye/i.test(name)) {
             dst = m.clone() // 眼睛保留
           } else if (/visor|helmet|head|hair|brow|face|skull/i.test(name)) {
-            const c = m.clone() as THREE.MeshLambertMaterial
-            c.color.copy(headColor) // 头部/面罩/头盔：保留贴图，中性提亮
+            const c = m.clone() as THREE.MeshStandardMaterial
+            c.color.copy(headColor) // 头部/面罩/头盔：保留贴图，柔和阵营 tint
             c.emissive = new THREE.Color(0x000000)
             dst = c
           } else {
-            const c = m.clone() as THREE.MeshLambertMaterial
-            // 保留原贴图（真实质感），强阵营 tint 相乘做到警察蓝/匪沙色
+            const c = m.clone() as THREE.MeshStandardMaterial
+            // 保留原贴图（真实质感），柔和阵营 tint 相乘；强识别交给地面光环/雷达/自发光
             c.color.copy(bodyColor)
-            c.emissive = glowColor.clone().multiplyScalar(0.42) // 阵营色自发光拉满：阴影/远处也一眼认得出警/匪
+            c.emissive = glowColor.clone().multiplyScalar(0.25) // 阵营色自发光（PBR 下收敛，防过曝）
             dst = c
           }
           swapRef.set(m, dst)
@@ -721,6 +857,8 @@ export class GameRenderer {
     this.charAnims.set(id, entry)
     if (idle) idle.play()
     this.buildOutline(model)
+    const shell = this.makeSmokeShell()
+    model.add(shell)
     this.scene.add(model)
     this.humanoids.set(id, {
       group: model,
@@ -728,6 +866,7 @@ export class GameRenderer {
       fallStart: 0,
       fallDir: Math.random() < 0.5 ? -1 : 1,
       teamRing: this.makeTeamRing(accent),
+      smokeShell: shell,
     })
   }
 
@@ -778,7 +917,7 @@ export class GameRenderer {
     return g
   }
 
-  updateHumanoid(id: string, x: number, y: number, z: number, yaw: number, alive: boolean, flash: boolean, moving = false): void {
+  updateHumanoid(id: string, x: number, y: number, z: number, yaw: number, alive: boolean, flash: boolean, moving = false, smoked = false): void {
     const h = this.humanoids.get(id)
     if (!h) return
     const anim = this.charAnims.get(id)
@@ -789,6 +928,8 @@ export class GameRenderer {
       h.teamRing.position.set(x, 0.6, z)
       h.teamRing.visible = alive
     }
+    // 烟雾剪影壳：存活且处于烟雾区时罩住人物
+    if (h.smokeShell) h.smokeShell.visible = smoked && alive
 
     if (!alive) {
       // #31 死亡倒地：600ms 前扑倒地 + 随机偏航，尸体保留到回合重置
@@ -905,6 +1046,7 @@ export class GameRenderer {
   }
 
   render(): void {
+    this.updateDynLights()
     this.renderer.render(this.scene, this.camera)
   }
 }

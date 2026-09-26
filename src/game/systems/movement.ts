@@ -50,7 +50,7 @@ export function updatePlayerMovement(
     : inp.walk
       ? CONFIG.walkSpeed
       : CONFIG.moveMaxSpeed
-  if (aiming) wishSpeed *= 0.4
+  if (aiming) wishSpeed *= CONFIG.adsSpeedScale
   // 武器移速系数（CS 2018 起全枪 1.0，字段保留给武器表驱动）
   if (activeW) wishSpeed *= WEAPONS[activeW.defId].moveSpeedScale
 

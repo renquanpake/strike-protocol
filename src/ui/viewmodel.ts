@@ -40,14 +40,17 @@ export class ViewModel {
   private muzzle: Vec3 = v3(0, -9999, 0)
 
   constructor(private renderer: GameRenderer, textures: TextureMap) {
-    const metal = () => new THREE.MeshLambertMaterial({ map: cloneTex(textures.gun_metal), color: 0xffffff })
-    const wood = () => new THREE.MeshLambertMaterial({ map: cloneTex(textures.gun_wood), color: 0xffffff })
-    const steel = () => new THREE.MeshLambertMaterial({ map: cloneTex(textures.gun_metal), color: 0x555a61 })
-    const blade = () => new THREE.MeshLambertMaterial({ color: 0xaab4c0 })
+    // PBR 材质（IBL 环境下金属件有真实高光，对标 CS 枪身质感）
+    const metal = () => new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_metal), roughness: 0.55, metalness: 0.7 })
+    const wood = () => new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_wood), roughness: 0.8, metalness: 0 })
+    const steel = () =>
+      new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_metal), color: 0x555a61, roughness: 0.35, metalness: 0.9 })
+    const blade = () => new THREE.MeshStandardMaterial({ color: 0xaab4c0, roughness: 0.25, metalness: 0.9 })
 
     // 各枪类部件组（注册进渲染器，按 id 驱动）
     this.buildRifle(metal, wood, steel)
     this.buildRifle(metal, wood, steel, 'vm_lmg') // 轻机枪：独立组，避免与步枪 GLB 替换冲突
+    this.buildRifle(metal, wood, steel, 'vm_rifle_ak', 'ak') // AK：弯弹匣 + 木质护木，独立于 M4 组
     this.buildSmi(metal, wood)
     this.buildSniper(metal, wood, steel)
     this.buildShotgun(metal, wood)
@@ -60,7 +63,7 @@ export class ViewModel {
 
   private buildArms(wood: () => THREE.Material): THREE.Group {
     const g = this.renderer.addViewmodelGroup('vm_arms')
-    const cloth = new THREE.MeshLambertMaterial({ color: 0x2c3138 })
+    const cloth = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.9, metalness: 0 })
     void wood
     // 约定：右手在组局部 z≈0（握把处），前臂向后（朝相机）延伸；组锚点由 update() 按 armAnchorZ 定位
     // 右前臂（握扳机）：从握把伸向右下
@@ -86,13 +89,26 @@ export class ViewModel {
     return g
   }
 
-  private buildRifle(metal: () => THREE.Material, wood: () => THREE.Material, steel: () => THREE.Material, id = 'vm_rifle'): THREE.Group {
+  private buildRifle(
+    metal: () => THREE.Material,
+    wood: () => THREE.Material,
+    steel: () => THREE.Material,
+    id = 'vm_rifle',
+    variant: 'm4' | 'ak' = 'm4',
+  ): THREE.Group {
     const g = this.renderer.addViewmodelGroup(id)
     this.part(g, new THREE.BoxGeometry(5, 5, 14), metal(), 0, 0, 11) // 机匣
     this.part(g, this.cyl(1.4, 14), steel(), 0, 0.5, -3) // 枪管
     this.part(g, this.cyl(1.8, 2.5), steel(), 0, 0.5, -10) // 消焰器
-    this.part(g, new THREE.BoxGeometry(3.5, 4, 6), metal(), 0, -1, -4) // 护木
-    this.part(g, new THREE.BoxGeometry(3, 9, 4), metal(), 0, -5, 9, 0.18) // 弹匣
+    if (variant === 'ak') {
+      this.part(g, new THREE.BoxGeometry(3.5, 4, 6), wood(), 0, -1, -4) // AK 木质护木
+      // 标志性弯弹匣（两段斜接模拟弧度）
+      this.part(g, new THREE.BoxGeometry(3, 7, 4), metal(), 0, -4.5, 9, 0.22)
+      this.part(g, new THREE.BoxGeometry(3, 5, 4), metal(), 0, -8.5, 10.5, 0.45)
+    } else {
+      this.part(g, new THREE.BoxGeometry(3.5, 4, 6), metal(), 0, -1, -4) // 护木
+      this.part(g, new THREE.BoxGeometry(3, 9, 4), metal(), 0, -5, 9, 0.18) // 直弹匣
+    }
     this.part(g, new THREE.BoxGeometry(3, 6, 3), wood(), -1, -5, 18, -0.35) // 握把
     this.part(g, new THREE.BoxGeometry(4, 4, 7), wood(), 0, 0, 22) // 枪托
     this.part(g, new THREE.BoxGeometry(1.5, 3, 1.5), metal(), 0, 3.5, -6) // 前准星
@@ -203,7 +219,7 @@ export class ViewModel {
   }
 
   hide(): void {
-    for (const key of ['rifle', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
+    for (const key of ['rifle', 'rifle_ak', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
       this.renderer.updateViewmodelGroup(`vm_${key}`, 0, -9999, 0, 0, false)
     }
     this.renderer.updateDynamicSphere('vm_grenade2', 0, -9999, 0, false)
@@ -243,16 +259,17 @@ export class ViewModel {
     const rotY = pose.yaw + Math.PI
 
     // 隐藏全部枪类组与投掷物球
-    for (const key of ['rifle', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
+    for (const key of ['rifle', 'rifle_ak', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
       this.renderer.updateViewmodelGroup(`vm_${key}`, 0, -9999, 0, 0, false)
     }
     this.renderer.updateDynamicSphere('vm_grenade2', 0, -9999, 0, false)
 
-    // 显示当前枪类
+    // 显示当前枪类（AK 用独立弯弹匣组，其余按枪类）
     if (isGrenade) {
       this.renderer.updateDynamicSphere('vm_grenade2', cx, cy - 3, cz, !hidden)
     } else {
-      this.renderer.updateViewmodelGroup(this.groupId(cat), cx, cy, cz, rotY, !hidden)
+      const grp = defId === 'ak' ? 'vm_rifle_ak' : this.groupId(cat)
+      this.renderer.updateViewmodelGroup(grp, cx, cy, cz, rotY, !hidden)
       // 持枪手臂：锚点沿枪轴前移到握把位置
       const a0 = this.armAnchorZ(cat)
       this.renderer.updateViewmodelGroup('vm_arms', ax + fwd.x * a0, cy, az + fwd.z * a0, rotY, !hidden && cat !== 'knife')

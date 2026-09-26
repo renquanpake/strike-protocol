@@ -66,7 +66,10 @@ export const CONFIG = {
   // 战斗
   /** 连射散布增量（°）的时间衰减（°/s，对标 CS 停火回准） */
   spreadDecayPerSec: 4,
+  /** 开镜（ADS）时的移速倍率（对标 CS 开镜减速） */
+  adsSpeedScale: 0.4,
   botHoldFireRange: 350, // Bot 不开火的最大距离（狙击枪除外）
+  botViewDot: -0.34, // Bot 前向视野余弦下限（≈110° 后向不可见，原散落 -0.34 收口）
   botAimTauTicks: 192, // 瞄准收敛时间常数（tick，约 3s）
   /** 难度表 1-10 档（#19 消费）：反应窗口 [min,max] ms / 瞄准误差乘数 / 收敛时间常数乘数 / 感知距离 u / 走位周期 tick。
    * 第 5 档 = 现行参数（回归基线：reaction [200,400]、sigmaMul 1、tauMul 1、viewRange 480、strafePeriod 32）。 */
@@ -100,6 +103,7 @@ export const CONFIG = {
   buyTimeMs: 5000, // live 期购买窗口（CS：冻结 5s + live 5s = 10s）
   roundTimeMs: 115000,
   c4TimerMs: 40000,
+  c4InteractRadius: 40, // 下包/拾取/拆包的有效交互半径 u（原散落 40*40 收口）
   plantMs: 3200,
   defuseMs: 10000,
   defuseWithKitMs: 5000,
@@ -124,4 +128,7 @@ export const CONFIG = {
   skyColor: 0x8fb8d8,
   fogNear: 1400,
   fogFar: 6000,
+  /** #11 屏幕震动：按距离衰减的半径与最大幅度（原散落 800/3 收口） */
+  shakeDecayDist: 800,
+  shakeMaxAmp: 3,
 } as const

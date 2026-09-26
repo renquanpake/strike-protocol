@@ -362,6 +362,16 @@ body {
   pointer-events: none;
   transition: opacity 0.1s linear;
 }
+#smokeveil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  background:
+    radial-gradient(ellipse at 50% 55%, rgba(235, 238, 240, 0.92) 0%, rgba(220, 225, 228, 0.82) 45%, rgba(205, 210, 214, 0.55) 100%);
+  mix-blend-mode: normal;
+}
 #hitmarker {
   position: absolute;
   left: 50%;

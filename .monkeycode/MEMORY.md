@@ -41,8 +41,9 @@
 - Context: 引入 three.js Soldier.glb（Vanguard 战士）并压缩、生成沙漠贴图
 - Category: 构建方法
 - Instructions:
-  - 当前人物模型：`public/models/soldier.glb`（three.js 官方 Soldier "Vanguard"，CC 资产，压缩后 1.06MB，动画 Idle/Run/Walk，骨骼归一化后站立≈140u）；回退链 `character.glb`（Quaternius CC0）→色块人形。
-  - 无缝贴图生成：`cd /workspace && node tools/imggen/gen.mjs [file...]`（读 `tools/imggen/queue.json`，调 agnes 生图 API，写 `public/textures/{file}.png`，`--force` 重生成）；新贴图需在 `src/engine/textures.ts` 的 `buildTextures` + `loadImageTextures` 登记键。
+  - 当前人物模型：`public/models/character.glb`（Mixamo 全动画 PBR，11 段含 Death01/Hit_Chest 死亡帧，3.25MB，主模型）；回退链 `soldier.glb`（three.js 官方 "Vanguard" CC，仅 Idle/Run/Walk）→色块人形。
+  - 人物材质为 PBR Standard（场景已有 RoomEnvironment PMREM IBL，Standard 不发黑）+ 柔和阵营 tint（CHAR_TINTS）；强识别靠地面阵营光环 + 雷达点色。
+  - 无缝贴图生成：`cd /workspace && node tools/imggen/gen.mjs [file...]`（读 `tools/imggen/queue.json`，调 agnes 生图 API，写 `public/textures/{file}.png`，`--force` 重生成）；新贴图需在 `src/engine/textures.ts` 的 `buildTextures` + `loadImageTextures` 登记键；法线贴图键 = `{key}_n`（`loadImageTextures` 自动挂 normalMap，缺失静默回退 albedo）。
   - GLB 压缩管线：`/tmp/opencode/gltftrim/`（gltf-transform v4 + sharp + meshoptimizer），模板 `trim_soldier.mjs`、检查 `inspect.mjs`。v4 注意：`io.writeBinary(doc)` 返回 Uint8Array（自己写盘）；禁用 meshopt/quantize（会删 Skin）。
   - 方法论已沉淀为项目 skill：`.opencode/skills/character-asset-pipeline/SKILL.md`、`.opencode/skills/map-build-craft/SKILL.md`。
 
@@ -51,8 +52,9 @@
 - Context: Agent 完成 44 项 backlog 全量开发
 - Category: 构建方法
 - Instructions:
-  - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**；2026-09-26 P0 差距修复批次（手感/武器/规则/HUD/Bot，commit a08c047）后 111 → **118**（`npx vitest run` 全绿为验收线，15 个测试文件）。
-  - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 48 项（models/textures，总包 ~22.5MB）；dev 模式 PWA 不生效。
+  - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**；2026-09-26 P0 差距修复批次（手感/武器/规则/HUD/Bot，commit a08c047）后 111 → **118**；P1+美术批次（渲染 PBR/ACES/IBL + 法线 + 烟雾 + bot 预投 + MVP + 10000-tick 确定性 tests/determinism.test.ts）后 118 → **120**（`npx vitest run` 全绿为验收线，16 个测试文件）。
+  - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 60 项（models/textures 含 6 张法线，总包 ~30.5MB）；dev 模式 PWA 不生效。
+  - 渲染管线已升级 PBR：ACESFilmicToneMapping + sRGB + RoomEnvironment PMREM IBL + 8×PointLight 动态光池（爆炸/闪光/枪口，`renderer.addFlashLight`/`updateDynLights`）+ 法线贴图（`{key}_n` 键）+ 阴影 2048/4096 分档。人物/地图用 MeshStandardMaterial（IBL 下不发黑）。
   - 地图现为 3 张：`de_sahara`（默认）/`de_plaza`（第二张对战图）/`training`（训练场），注册在 `src/game/map/match.ts` 的 `MAP_BUILDERS`；新增图需在该表登记 + routes.test.ts 加路由回归。
 
 ### [环境限制: headless 游戏 tick 速约为墙钟 5–7x]

@@ -37,6 +37,8 @@ export interface BotBrain {
   flashTarget: number | null
   /** #21：本回合投过燃烧瓶 */
   moloThrown: boolean
+  /** 投掷物预投：本回合出发前封过烟（rush/slow/lurk T 队，出生区封爆点口） */
+  preSmoke: boolean
   /** #23：最近无线电 tick */
   lastRadioTick: number
 }
@@ -103,6 +105,7 @@ export function createBotContext(
         waitUntilTick: 0,
         flashTarget: null,
         moloThrown: false,
+        preSmoke: false,
         lastRadioTick: 0,
       })
     }
@@ -331,6 +334,33 @@ export function updateBots(
           inp.jumpHeld = true
           brain.stuckTicks = 0
         }
+        // 投掷物预投：T 队推进途中向目标爆点封一道烟（每 bot 每回合 1 颗，rush/slow 更前置）
+        if (
+          p.team === 'T' &&
+          r.phase === 'live' &&
+          !brain.preSmoke &&
+          tick >= brain.nextThrowTick &&
+          dist2D(p.position, brain.objective) > 300
+        ) {
+          const smoke = p.weapons.grenades[2]
+          if (smoke && smoke.ammoMag > 0) {
+            const tx = brain.objective.x - p.position.x
+            const tz = brain.objective.z - p.position.z
+            const tl = Math.max(1, Math.hypot(tx, tz))
+            throwGrenade(
+              state,
+              p,
+              'smoke',
+              { x: p.position.x, y: p.position.y + 40, z: p.position.z },
+              v3(tx / tl, ctx.tacticT === 'rush' ? 0.15 : 0.28, tz / tl),
+              events,
+            )
+            smoke.ammoMag -= 1
+            brain.preSmoke = true
+            brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
+            events.emit({ type: 'radio', team: 'T', key: 'smokeOut', playerId: p.id })
+          }
+        }
       } else {
         brain.path = null
         // 到达后：守点架枪（朝 idleYaw 转向）
@@ -421,7 +451,7 @@ function perceiveEnemy(
     const hit = raycastBoxes(eye, v3(dx * inv, dy * inv, dz * inv), boxes)
     if (hit && hit.t < dist - 12) continue
     const dotf = fx * dx * inv + fz * dz * inv
-    if (dotf < -0.34) continue
+    if (dotf < CONFIG.botViewDot) continue
     // 烟雾遮蔽：LOS 中点冒烟则视为不可见
     if (inSmoke(state, (eye.x + chest.x) / 2, (eye.y + chest.y) / 2, (eye.z + chest.z) / 2)) continue
     // 反应窗口仅在感知目标变化时重置，避免每 tick 反复推迟开火（#19：窗口按难度）

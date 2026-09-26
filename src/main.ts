@@ -8,7 +8,7 @@ import { updatePlayerMovement, setMouseSensScale } from './game/systems/movement
 import { updateWeaponSystem, fireWeapon, viewForward, viewRight } from './game/systems/weapon'
 import { updateTargets, trainingTargets } from './game/systems/targets'
 import { updateRound } from './game/systems/round'
-import { updateGrenades } from './game/systems/grenade'
+import { updateGrenades, inSmoke } from './game/systems/grenade'
 import { updateDrops } from './game/systems/drops'
 import { createBotContext, updateBots, type BotContext } from './game/systems/bot'
 import { emptyInput } from './engine/input'
@@ -107,7 +107,7 @@ let matchendShown = false
 let renderer: GameRenderer
 function makeRenderer(): GameRenderer {
   const r = new GameRenderer(canvas, settings.fov)
-  r.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600)
+  r.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600, settings.quality === 'high' ? 4096 : 2048)
   return r
 }
 
@@ -248,6 +248,8 @@ events.on('shot', (e) => {
     const fwd = viewForward(p.yaw, p.pitch)
     lastShotMuzzle = vmMuzzle.y > -9000 ? vmMuzzle : v3(p.position.x + fwd.x * 24, eyeY + fwd.y * 24, p.position.z + fwd.z * 24)
     muzzleTicks = 6
+    // 枪口动态火光（弱暖光，短促）
+    renderer.addFlashLight(lastShotMuzzle.x, lastShotMuzzle.y, lastShotMuzzle.z, 0xffd27a, 0.9, 120)
     // 弹壳
     const up = v3(0, 1, 0)
     const right = viewRight(p.yaw, p.pitch)
@@ -329,16 +331,16 @@ events.on('grenadeExploded', (e) => {
   if (!st) return
   const p = st.players[0]
   const d = Math.hypot(e.x - p.position.x, e.z - p.position.z)
-  triggerShake(Math.max(0, Math.min(1, 1 - d / 800)) * 3, e.kind === 'flash' ? 0.5 : 1)
+  triggerShake(Math.max(0, Math.min(1, 1 - d / CONFIG.shakeDecayDist)) * CONFIG.shakeMaxAmp, e.kind === 'flash' ? 0.5 : 1)
 })
 events.on('bombExploded', () => {
   const st = state
   if (!st) return
-  triggerShake(3, 1)
+  triggerShake(CONFIG.shakeMaxAmp, 1)
 })
 function triggerShake(amp: number, scale: number): void {
   if (!settings.screenShake || amp <= 0) return
-  shakeAmp = Math.min(3, amp * scale)
+  shakeAmp = Math.min(CONFIG.shakeMaxAmp, amp * scale)
   shakeUntil = performance.now() + 260
 }
 
@@ -385,11 +387,15 @@ events.on('roundEnd', () => {
 events.on('grenadeExploded', (e) => {
   const kind = e.kind === 'flash' ? 'flash' : e.kind === 'molotov' || e.kind === 'smoke' ? e.kind : 'he'
   audio.explosion(kind, e.x, e.y, e.z)
+  // 动态火光（爆炸/燃烧橙光、闪光白光）
+  if (e.kind === 'flash') renderer.addFlashLight(e.x, e.y + 20, e.z, 0xfff6e0, 5, 200)
+  else if (e.kind === 'he' || e.kind === 'molotov') renderer.addFlashLight(e.x, e.y + 10, e.z, 0xff9a3c, 3.5, e.kind === 'he' ? 300 : 500)
 })
 events.on('bombExploded', () => {
   const st = state
   if (!st) return
   audio.explosion('c4', st.round.c4.position.x, st.round.c4.position.y, st.round.c4.position.z)
+  renderer.addFlashLight(st.round.c4.position.x, st.round.c4.position.y + 30, st.round.c4.position.z, 0xff8a2a, 7, 500)
 })
 events.on('c4Beep', () => {
   const st = state
@@ -451,7 +457,9 @@ function refreshDynamic(): void {
   for (const p of st.players) {
     if (p.id === 0) continue
     const moving = Math.hypot(p.velocity.x, p.velocity.z) > 20
-    renderer.updateHumanoid(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.yaw, p.alive, false, moving)
+    // 烟雾剪影：人物（眼高）在烟雾区内 → 罩雾壳，模拟"烟里只见轮廓"
+    const smoked = p.alive ? inSmoke(st, p.position.x, p.position.y + CONFIG.eyeHeight, p.position.z) : false
+    renderer.updateHumanoid(`bot:${p.id}`, p.position.x, p.position.y, p.position.z, p.yaw, p.alive, false, moving, smoked)
   }
   const c4 = st.round.c4
   const c4Visible = st.mode === 'de' && (c4.state === 'carried' || c4.state === 'dropped' || c4.state === 'planted')
@@ -518,7 +526,13 @@ function refreshGrenades(): void {
   }
   for (const z of st.smokes) {
     ensureDyn(`sm:${z.id}`)
-    renderer.updateParticleCloud(`sm:${z.id}`, z.center.x, z.center.y + 25, z.center.z, z.radius, true)
+    // 烟雾体积化：先 25% 寿命内膨胀至 1.35×，随后整团缓慢上升（模拟烟随风抬升）
+    const lifeTicks = Math.max(1, Math.round((CONFIG.smokeLifeMs / 1000) * CONFIG.tickRate))
+    const remain = Math.max(0, z.untilTick - st.tick)
+    const ageFrac = 1 - remain / lifeTicks
+    const grow = 1 + 0.35 * Math.min(1, ageFrac * 4)
+    const rise = 14 * Math.min(1, ageFrac)
+    renderer.updateParticleCloud(`sm:${z.id}`, z.center.x, z.center.y + 25 + rise, z.center.z, z.radius * grow, true)
   }
   for (const z of st.burns) {
     ensureDyn(`fn:${z.id}`)
@@ -747,7 +761,14 @@ function frame(now: number): void {
       roundMsgEl.textContent = `MATCH OVER — ${r.lastWinner} WINS ${r.score.T}:${r.score.CT}`
     } else if (r.phase === 'roundEnd' || r.phase === 'halftime') {
       roundMsgEl.style.display = 'block'
-      roundMsgEl.textContent = r.phase === 'halftime' ? 'HALFTIME — 换边' : `${r.lastWinner} 赢下回合（${r.lastResult}）`
+      // MVP：本回合击杀最多者（roundKills 在下个 freeze 才清零，roundEnd 期间可读）
+      let mvp = st.players[0]
+      for (const pl of st.players) if (pl.roundKills > mvp.roundKills) mvp = pl
+      const mvpLine = mvp.roundKills > 0 ? ` · MVP ${mvp.name}（${mvp.roundKills} 杀）` : ''
+      roundMsgEl.textContent =
+        r.phase === 'halftime'
+          ? `HALFTIME — 换边${mvpLine}`
+          : `${r.lastWinner} 赢下回合（${r.lastResult}）${mvpLine}`
     } else {
       roundMsgEl.style.display = 'none'
     }
@@ -767,6 +788,13 @@ function frame(now: number): void {
   if (blindEl) {
     const remain = p.blindUntil - st.tick
     blindEl.style.opacity = remain > 0 ? String(Math.min(1, (remain / 256) * 1.2)) : '0'
+  }
+  // 本地烟幕罩：自身（眼高）处于烟雾区 → 屏幕白雾
+  const smokeVeil = document.getElementById('smokeveil') as HTMLElement | null
+  if (smokeVeil) {
+    const eyeY = p.position.y + CONFIG.eyeHeight
+    const inSm = inSmoke(st, p.position.x, eyeY, p.position.z)
+    smokeVeil.style.opacity = inSm ? '0.8' : '0'
   }
 
   // #4 结算屏：matchEnd 触发一次
@@ -832,7 +860,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
     // #37 训练场：填靶 + 无限弹 + 金钱锁
     state.targets = trainingTargets()
     state.training = true
-    for (const p of state.players) p.money = 16000
+    for (const p of state.players) p.money = CONFIG.moneyCap
   }
   if (cfg.mode === 'de') {
     state.round.phaseEndTick = Math.round((CONFIG.warmupMs / 1000) * CONFIG.tickRate)
@@ -850,7 +878,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
         newWeaponInstance('molotov'),
       ]
       p.activeSlot = 0
-      p.money = 16000
+      p.money = CONFIG.moneyCap
     }
   }
   if (!state.training) state.targets = []
@@ -858,7 +886,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
 
   // 重建渲染世界
   renderer.resetWorld()
-  renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600)
+  renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600, settings.quality === 'high' ? 4096 : 2048)
   renderer.addSkyDome()
   madeDyn.clear()
   for (const s of shells) {
@@ -951,12 +979,13 @@ async function init(): Promise<void> {
   // 先加载生图表面贴图（失败回退 canvas），再建世界
   setLoadProgress(0.1, '加载贴图…')
   await loadImageTextures(textures, (done, total) => setLoadProgress(0.1 + 0.35 * (done / total), `加载贴图 ${done}/${total}…`))
-  // 人物模型（three.js 官方 Soldier「Vanguard」CC 资产；失败回退 character.glb 再退回色块）
+  // 人物模型：优先 character.glb（Mixamo 全动画 PBR，含 Death01/Hit_Chest 死亡帧，观感对标基准）；
+  // 失败回退 soldier.glb（three.js 官方 Vanguard，仅 Idle/Run/Walk）再退回色块
   setLoadProgress(0.55, '加载人物模型…')
   let charDegraded = false
-  if (!(await renderer.loadCharacterModel('/models/soldier.glb', 'T'))) {
+  if (!(await renderer.loadCharacterModel('/models/character.glb', 'T'))) {
     charDegraded = true
-    await renderer.loadCharacterModel('/models/character.glb', 'T')
+    await renderer.loadCharacterModel('/models/soldier.glb', 'T')
   }
   // #30 阵营差异化：CT 独立模板（缺则回退共享 T 模板，不影响可用性）
   await renderer.loadCharacterModel('/models/ct_soldier.glb', 'CT').catch(() => false)

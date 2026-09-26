@@ -236,27 +236,51 @@ function loadOrFallback(url: string, fallback: () => THREE.Texture): Promise<THR
   })
 }
 
-/** 异步把生图表面贴图覆盖进 map（保留 ladder/glass 的 canvas 版），并补枪身/阵营键；onStep 报告进度 */
+/** 异步把生图表面贴图覆盖进 map（保留 ladder/glass 的 canvas 版），并补枪身/阵营键；onStep 报告进度。
+ * PBR 升级：法线贴图以 `{key}_n` 键加载（缺失时静默跳过，不影响 albedo）。 */
 export async function loadImageTextures(map: TextureMap, onStep?: (done: number, total: number) => void): Promise<void> {
-  const jobs: Array<Promise<THREE.Texture>> = [
-    loadOrFallback('/textures/concrete.png', concreteTexture),
-    loadOrFallback('/textures/wood.png', woodTexture),
-    loadOrFallback('/textures/sand.png', sandTexture),
-    loadOrFallback('/textures/metal.png', metalTexture),
-    loadOrFallback('/textures/gun_metal.png', () => metalTexture()),
-    loadOrFallback('/textures/gun_wood.png', () => woodTexture()),
-    loadOrFallback('/textures/bot_ct.png', () => metalTexture()),
-    loadOrFallback('/textures/bot_t.png', () => sandTexture()),
-    loadOrFallback('/textures/stone.png', stoneTexture),
-    loadOrFallback('/textures/roof.png', roofTexture),
-    loadOrFallback('/textures/sandbag.png', sandbagTexture),
-    loadOrFallback('/textures/rusted.png', rustedTexture),
-  ]
-  const keys = [
+  const albedoKeys = [
     'concrete', 'wood', 'sand', 'metal',
     'gun_metal', 'gun_wood', 'bot_ct', 'bot_t',
     'stone', 'roof', 'sandbag', 'rusted',
-  ]
+  ] as const
+  const albedoFallback: Record<(typeof albedoKeys)[number], () => THREE.Texture> = {
+    concrete: concreteTexture,
+    wood: woodTexture,
+    sand: sandTexture,
+    metal: metalTexture,
+    gun_metal: () => metalTexture(),
+    gun_wood: () => woodTexture(),
+    bot_ct: () => metalTexture(),
+    bot_t: () => sandTexture(),
+    stone: stoneTexture,
+    roof: roofTexture,
+    sandbag: sandbagTexture,
+    rusted: rustedTexture,
+  }
+  const jobs: Array<Promise<THREE.Texture>> = albedoKeys.map((k) => loadOrFallback(`/textures/${k}.png`, albedoFallback[k]))
+  // 法线贴图（仅表面材质，缺失回退无操作）
+  const normalKeys = ['concrete', 'wood', 'sand', 'stone', 'rusted', 'sandbag'] as const
+  jobs.push(
+    ...normalKeys.map((k) =>
+      new Promise<THREE.Texture | null>((resolve) => {
+        new THREE.TextureLoader().load(
+          `/textures/${k}_n.png`,
+          (tex) => {
+            tex.colorSpace = THREE.NoColorSpace
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+            tex.anisotropy = 4
+            resolve(tex)
+          },
+          undefined,
+          () => resolve(null),
+        )
+      }).then((t) => {
+        if (t) map[`${k}_n`] = t
+        return t as unknown as THREE.Texture
+      }),
+    ),
+  )
   const settled = await Promise.all(
     jobs.map((j, i) =>
       j.then((tex) => {
@@ -265,7 +289,7 @@ export async function loadImageTextures(map: TextureMap, onStep?: (done: number,
       }),
     ),
   )
-  for (let i = 0; i < settled.length; i++) map[keys[i]] = settled[i]
+  for (let i = 0; i < albedoKeys.length; i++) map[albedoKeys[i]] = settled[i]
 }
 
 /** 印花贴图：白底生成图 → 运行时提取 alpha（越黑越不透明），用于投射弹孔/烧痕 */

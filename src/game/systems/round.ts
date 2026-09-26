@@ -56,6 +56,7 @@ function enterFreeze(state: GameState, level: PreppedLevel): void {
     p.aimStage = 0
     p.fireSpread = 0
     p.roundKillReward = 0
+    p.roundKills = 0
     // CS：拆弹钳每回合需重购（不再跨回合保留）
     p.hasKit = false
   }
@@ -187,7 +188,7 @@ export function updateRound(state: GameState, level: PreppedLevel, events: Event
         const dx = p.position.x - c4.position.x
         const dz = p.position.z - c4.position.z
         const dy = p.position.y - c4.position.y
-        if (dx * dx + dz * dz <= 40 * 40 && Math.abs(dy) < 60) {
+        if (dx * dx + dz * dz <= CONFIG.c4InteractRadius * CONFIG.c4InteractRadius && Math.abs(dy) < 60) {
           c4.state = 'carried'
           c4.carrierId = p.id
           events.emit({ type: 'c4PickedUp', playerId: p.id })
@@ -222,7 +223,7 @@ export function updateRound(state: GameState, level: PreppedLevel, events: Event
         const dx = p.position.x - c4.position.x
         const dz = p.position.z - c4.position.z
         const dy = p.position.y - c4.position.y
-        if (dx * dx + dz * dz + dy * dy <= 40 * 40) {
+        if (dx * dx + dz * dz + dy * dy <= CONFIG.c4InteractRadius * CONFIG.c4InteractRadius) {
           const need = p.hasKit ? CONFIG.defuseWithKitMs : CONFIG.defuseMs
           c4.defuseProgress += dt / (need / 1000)
           if (c4.defuseProgress >= 1) {
@@ -264,7 +265,7 @@ function anyDefusing(state: GameState, c4: { position: { x: number; y: number; z
     if (p.team !== 'CT' || !p.alive || !p.hasKit || !p.input.useHeld) continue
     const dx = p.position.x - c4.position.x
     const dz = p.position.z - c4.position.z
-    if (dx * dx + dz * dz <= 40 * 40) return true
+    if (dx * dx + dz * dz <= CONFIG.c4InteractRadius * CONFIG.c4InteractRadius) return true
   }
   return false
 }
