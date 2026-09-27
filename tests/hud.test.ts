@@ -17,7 +17,7 @@ describe('HUD 回合栏（M9 复刻检查回归）', () => {
     state.round.phaseEndTick = state.tick + Math.round(115 * CONFIG.tickRate)
     const line = roundLine(state)
     expect(line).toContain('115s')
-    expect(line).toContain('LIVE')
+    expect(line).toContain('战斗')
   })
 
   it('freeze 相位显示购买倒计时（5s）', () => {
@@ -25,17 +25,17 @@ describe('HUD 回合栏（M9 复刻检查回归）', () => {
     state.round.phase = 'freeze'
     state.round.phaseEndTick = state.tick + Math.round(5 * CONFIG.tickRate)
     const line = roundLine(state)
-    expect(line).toContain('BUY 5.0s')
+    expect(line).toContain('购买 5.0s')
   })
 
-  it('bombPlanted 显示 C4 爆炸倒计时与站点', () => {
+  it('bombPlanted 显示 C4 引爆倒计时与站点', () => {
     const state = makeState()
     state.round.phase = 'bombPlanted'
     state.round.c4.state = 'planted'
     state.round.c4.site = 'A'
     state.round.c4.explodeAtTick = state.tick + Math.round(40 * CONFIG.tickRate)
     const line = roundLine(state)
-    expect(line).toContain('C4 A 40s')
+    expect(line).toContain('C4 引爆 A 40s')
   })
 
   it('本地玩家携带 C4 时显示 C4:携带', () => {

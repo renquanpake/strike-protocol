@@ -28,6 +28,8 @@ export interface Settings {
   teamColors: 'default' | 'deuteranopia'
   /** #42 改键：action → KeyboardEvent.code */
   binds: Record<string, string>
+  /** V5 debug 面板（POS/SPD/HP/TICK + FPS）默认关闭，?debug=1 亦可开启 */
+  showDebug: boolean
 }
 
 /** #42 默认键位（与历史硬编码一致） */
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   resolution: 2,
   language: 'zh',
   teamColors: 'default',
+  showDebug: false,
   binds: { ...DEFAULT_BINDS },
 }
 

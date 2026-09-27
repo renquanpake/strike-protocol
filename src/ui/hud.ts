@@ -2,6 +2,7 @@ import { CONFIG } from '../game/config'
 import type { GameState } from '../game/state'
 import { WEAPONS } from '../game/weapons'
 import { activeWeapon } from '../game/systems/weapon'
+import { t } from './strings'
 
 export class HUD {
   private statusEl: HTMLElement
@@ -97,7 +98,7 @@ export class HUD {
     this.fpsEl.textContent = String(fps)
     this.tickEl.textContent = String(state.tick)
   }
-  /** 中央大号计时：冻结=BUY 计时 / live=回合剩余 / C4=红色倒计时；其他阶段隐藏 */
+  /** 中央大号计时：冻结=购买计时 / live=回合剩余 / C4=红色倒计时；其他阶段隐藏 */
   private updateBigTimer(state: GameState): void {
     if (!this.bigTimer) return
     const r = state.round
@@ -105,7 +106,7 @@ export class HUD {
     let danger = false
     if (state.mode === 'de') {
       if (r.phase === 'freeze') {
-        text = `BUY ${Math.max(0, Math.ceil((r.phaseEndTick - state.tick) / CONFIG.tickRate))}`
+        text = `${t('hud.buy')} ${Math.max(0, Math.ceil((r.phaseEndTick - state.tick) / CONFIG.tickRate))}`
       } else if (r.phase === 'live') {
         text = fmtTime(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate)
       } else if (r.phase === 'bombPlanted') {
@@ -130,29 +131,35 @@ export function roundLine(state: GameState): string {
   const p = state.players[0]
   // #36 死斗/团队死斗：显示击杀目标进度
   if (state.mode === 'dm') {
-    return `死斗 · 个人 ${p.kills}/${CONFIG.dmKillTarget}`
+    return t('hud.dm', { k: p.kills, n: CONFIG.dmKillTarget })
   }
   if (state.mode === 'tdm') {
-    const t = state.players.filter((x) => x.team === 'T').reduce((a, x) => a + x.kills, 0)
+    const t_ = state.players.filter((x) => x.team === 'T').reduce((a, x) => a + x.kills, 0)
     const ct = state.players.filter((x) => x.team === 'CT').reduce((a, x) => a + x.kills, 0)
-    return `团队死斗 · T ${t}/${CONFIG.tdmKillTarget} : ${ct}/${CONFIG.tdmKillTarget} CT`
+    return t('hud.tdm', { t: t_, ct, n: CONFIG.tdmKillTarget })
   }
-  let timer = ''
-  if (r.phase === 'freeze') timer = `BUY ${(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate).toFixed(1)}s`
-  else if (r.phase === 'live') timer = `${(Math.max(0, r.phaseEndTick - state.tick) / CONFIG.tickRate).toFixed(0)}s`
+  // V5：状态段（相位词 + 计时）统一进 strings.ts，中文为主
+  const sec = (ms: number) => Math.max(0, ms / CONFIG.tickRate)
+  let status: string
+  if (r.phase === 'freeze') status = `${t('hud.phaseFreeze')} ${sec(r.phaseEndTick - state.tick).toFixed(1)}s`
+  else if (r.phase === 'live') status = `${t('hud.phaseLive')} ${sec(r.phaseEndTick - state.tick).toFixed(0)}s`
   else if (r.phase === 'bombPlanted') {
-    const left = Math.max(0, r.c4.explodeAtTick - state.tick) / CONFIG.tickRate
-    timer = `C4 ${r.c4.site} ${left.toFixed(0)}s`
-  } else if (r.phase === 'warmup') timer = 'WARMUP'
-  else if (r.phase === 'roundEnd') timer = 'ROUND OVER'
-  else if (r.phase === 'halftime') timer = 'HALFTIME'
-  else if (r.phase === 'matchEnd') timer = 'MATCH OVER'
+    status = `${t('hud.phaseBomb')} ${r.c4.site ?? ''} ${sec(r.c4.explodeAtTick - state.tick).toFixed(0)}s`.trim()
+  } else if (r.phase === 'warmup') status = t('hud.phaseWarmup')
+  else if (r.phase === 'roundEnd') status = t('hud.roundOver')
+  else if (r.phase === 'halftime') status = t('hud.halftime')
+  else status = t('hud.matchOver')
 
-  let c4line = ''
   const c4 = r.c4
-  if (c4.state === 'carried' && c4.carrierId === p.id) c4line = ' · C4:携带'
-  if (c4.state === 'dropped') c4line = ' · C4:掉落'
-  if (c4.state === 'planted') c4line = ` · C4:已安放${c4.defuseProgress > 0 ? ` 拆 ${(c4.defuseProgress * 100).toFixed(0)}%` : ''}`
+  let c4line = ''
+  if (c4.state === 'carried' && c4.carrierId === p.id) c4line = ` · ${t('hud.c4Carry')}`
+  if (c4.state === 'dropped') c4line = ` · ${t('hud.c4Drop')}`
+  if (c4.state === 'planted') {
+    const defuse = c4.defuseProgress > 0 ? ` ${t('hud.c4Defuse')} ${(c4.defuseProgress * 100).toFixed(0)}%` : ''
+    c4line = ` · ${t('hud.c4Planted')}${defuse}`
+  }
   const ot = r.overtime > 0 ? ` OT${r.overtime}` : ''
-  return `R${r.roundNumber} ${r.phase.toUpperCase()}${ot} ${timer} · T ${r.score.T}:${r.score.CT} CT · $${p.money}${c4line}`
+  const score = t('hud.score', { t: r.score.T, c: r.score.CT })
+  const money = t('hud.money', { money: p.money })
+  return `${t('hud.round')} ${r.roundNumber} ${status}${ot} · ${score} · ${money}${c4line}`
 }

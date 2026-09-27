@@ -35,6 +35,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     'mode.tdm': '团队死斗',
     'buy.sub': '副武器',
     'buy.primary': '主武器',
+    'buy.smg': '冲锋枪',
+    'buy.rifle': '步枪',
+    'buy.sniper': '狙击',
+    'buy.heavy': '重型',
     'buy.grenade': '投掷物',
     'buy.gear': '装备',
     'buy.kit': '拆弹钳',
@@ -56,6 +60,17 @@ const DICT: Record<Lang, Record<string, string>> = {
     'hud.c4Carry': 'C4:携带',
     'hud.c4Drop': 'C4:掉落',
     'hud.c4Planted': 'C4:已安放',
+    'hud.c4Defuse': '拆包',
+    'hud.phaseFreeze': '购买',
+    'hud.phaseLive': '战斗',
+    'hud.phaseBomb': 'C4 引爆',
+    'hud.phaseWarmup': '热身',
+    'hud.round': '回合',
+    'hud.buy': '购买',
+    'hud.dm': '死斗 · 个人 {k}/{n}',
+    'hud.tdm': '团队死斗 · T {t}/{n} : {ct}/{n} CT',
+    'hud.score': 'T {t}:{c} CT',
+    'hud.money': '${money}',
   },
   en: {
     'ui.start': 'S T A R T',
@@ -79,6 +94,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     'mode.tdm': 'Team Deathmatch',
     'buy.sub': 'Secondary',
     'buy.primary': 'Primary',
+    'buy.smg': 'SMGs',
+    'buy.rifle': 'Rifles',
+    'buy.sniper': 'Snipers',
+    'buy.heavy': 'Heavy',
     'buy.grenade': 'Grenades',
     'buy.gear': 'Gear',
     'buy.kit': 'Defuse Kit',
@@ -100,9 +119,22 @@ const DICT: Record<Lang, Record<string, string>> = {
     'hud.c4Carry': 'C4:carry',
     'hud.c4Drop': 'C4:dropped',
     'hud.c4Planted': 'C4:planted',
+    'hud.c4Defuse': 'defusing',
+    'hud.phaseFreeze': 'BUY',
+    'hud.phaseLive': 'LIVE',
+    'hud.phaseBomb': 'C4 ARMED',
+    'hud.phaseWarmup': 'WARMUP',
+    'hud.round': 'R',
+    'hud.buy': 'BUY',
+    'hud.dm': 'DM · You {k}/{n}',
+    'hud.tdm': 'TDM · T {t}/{n} : {ct}/{n} CT',
+    'hud.score': 'T {t}:{c} CT',
+    'hud.money': '${money}',
   },
 }
 
-export function t(key: string): string {
-  return DICT[current][key] ?? DICT.zh[key] ?? key
+export function t(key: string, vars?: Record<string, string | number>): string {
+  let s = DICT[current][key] ?? DICT.zh[key] ?? key
+  if (vars) for (const k in vars) s = s.replace(`{${k}}`, String(vars[k]))
+  return s
 }

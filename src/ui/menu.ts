@@ -1,6 +1,7 @@
 /**
  * #1 主菜单 + #7 设置面板 + #2 暂停 + #4 结算屏。
  * DOM 自建（注入 <style>），main.ts 通过回调驱动（startMatch / onExit / onResume）。
+ * V5 美术化：地图/模式/阵营改卡片选择，设置改自定义下拉+开关（无原生控件），全局 Rajdhani 字体。
  */
 import type { MatchConfig } from './settings'
 import { loadSettings, saveSettings, loadMatchConfig, saveMatchConfig, DEFAULT_SETTINGS, type Settings } from './settings'
@@ -9,33 +10,77 @@ import { loadCareer } from '../game/career'
 import { setLanguage } from './strings'
 import type { GameState } from '../game/state'
 
+/** 卡片色板（V6 地图辨识度：de_sahara 沙、de_plaza 地中海、training 训练） */
+const MAP_CARD: Record<string, { bg: string; tag: string }> = {
+  de_sahara: { bg: 'linear-gradient(135deg,#c9a86a,#8a5a30)', tag: '沙漠' },
+  de_plaza: { bg: 'linear-gradient(135deg,#dfe6ea,#7d8a97)', tag: '地中海' },
+  training: { bg: 'linear-gradient(135deg,#4a5d3a,#2c3a24)', tag: '训练场' },
+}
+const MODE_CARD: Record<string, { bg: string; tag: string }> = {
+  de: { bg: 'linear-gradient(135deg,#3a4a6a,#1c2438)', tag: '爆破' },
+  dm: { bg: 'linear-gradient(135deg,#6a3a3a,#381c1c)', tag: '死斗' },
+  tdm: { bg: 'linear-gradient(135deg,#4a6a5a,#1c382c)', tag: '团队死斗' },
+}
+const SIDE_CARD: Record<string, { bg: string; tag: string }> = {
+  T: { bg: 'linear-gradient(135deg,#b58a5a,#5a3a1c)', tag: '进攻' },
+  CT: { bg: 'linear-gradient(135deg,#5a7fb5,#1c3a5a)', tag: '防守' },
+}
+
 const CSS = `
-.sp-overlay{position:fixed;inset:0;background:rgba(4,7,10,.92);z-index:50;display:flex;align-items:center;justify-content:center;color:#dfe8f0;font-family:'Courier New',monospace;pointer-events:auto}
-.sp-panel{background:rgba(10,14,18,.97);border:1px solid rgba(140,200,255,.4);border-radius:6px;padding:26px 30px;max-width:920px;width:94%;max-height:90vh;overflow-y:auto}
-.sp-title{font-size:26px;letter-spacing:.18em;color:#ffd257;margin:0 0 4px}
-.sp-sub{font-size:12px;color:rgba(223,232,240,.55);margin:0 0 18px}
+.sp-overlay{position:fixed;inset:0;background:rgba(4,7,10,.92);z-index:50;display:flex;align-items:center;justify-content:center;color:#dfe8f0;font-family:'Rajdhani','Saira','Courier New',monospace;pointer-events:auto}
+.sp-panel{background:rgba(10,14,18,.97);border:1px solid rgba(140,200,255,.4);border-radius:6px;padding:26px 30px;max-width:980px;width:94%;max-height:90vh;overflow-y:auto}
+.sp-title{font-size:28px;letter-spacing:.18em;color:#ffd257;margin:0 0 4px;font-weight:700}
+.sp-sub{font-size:12px;color:rgba(223,232,240,.55);margin:0 0 18px;letter-spacing:.05em}
 .sp-cols{display:flex;gap:26px;flex-wrap:wrap}
-.sp-col{flex:1;min-width:270px}
-.sp-sec{color:#7fb0ff;font-size:11px;letter-spacing:.12em;border-bottom:1px solid rgba(140,200,255,.25);padding-bottom:4px;margin:14px 0 8px}
-.sp-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:5px 2px;gap:10px}
-.sp-row label{opacity:.85;flex-shrink:0}
-.sp-row select,.sp-row input[type=text]{background:#0a0e12;border:1px solid rgba(140,200,255,.35);color:#dfe8f0;border-radius:3px;padding:4px 8px;font-size:13px;font-family:inherit;max-width:180px}
-.sp-row input[type=range]{width:140px}
-.sp-btn{display:inline-block;margin:6px 8px 0 0;background:rgba(140,200,255,.14);border:1px solid rgba(140,200,255,.5);color:#dfe8f0;border-radius:4px;padding:9px 20px;font-size:14px;letter-spacing:.06em;cursor:pointer;font-family:inherit}
+.sp-col{flex:1;min-width:280px}
+.sp-sec{color:#7fb0ff;font-size:11px;letter-spacing:.12em;border-bottom:1px solid rgba(140,200,255,.25);padding-bottom:4px;margin:16px 0 8px}
+.sp-row{display:flex;justify-content:space-between;align-items:center;font-size:14px;padding:6px 2px;gap:10px}
+.sp-row label{opacity:.9;flex-shrink:0;font-weight:500}
+.sp-btn{display:inline-block;margin:6px 8px 0 0;background:rgba(140,200,255,.14);border:1px solid rgba(140,200,255,.5);color:#dfe8f0;border-radius:4px;padding:9px 20px;font-size:14px;letter-spacing:.06em;cursor:pointer;font-family:inherit;font-weight:600}
 .sp-btn:hover{background:rgba(140,200,255,.3)}
 .sp-btn.primary{background:rgba(255,210,87,.16);border-color:rgba(255,210,87,.6);color:#ffd257}
 .sp-btn.danger{background:rgba(208,52,44,.16);border-color:rgba(208,52,44,.55);color:#ff9d94}
 .sp-tabs{display:flex;gap:8px;margin-bottom:6px}
-.sp-tab{padding:6px 16px;font-size:13px;border-radius:4px;cursor:pointer;color:rgba(223,232,240,.6);border:1px solid transparent}
+.sp-tab{padding:6px 16px;font-size:14px;border-radius:4px;cursor:pointer;color:rgba(223,232,240,.6);border:1px solid transparent;font-weight:600}
 .sp-tab.active{color:#ffd257;border-color:rgba(255,210,87,.4);background:rgba(255,210,87,.08)}
-.sp-result{font-size:20px;color:#ffd257;letter-spacing:.1em;margin:0 0 10px;text-align:center}
-.sp-stats{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0}
+.sp-result{font-size:22px;color:#ffd257;letter-spacing:.1em;margin:0 0 10px;text-align:center;font-weight:700}
+.sp-stats{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
 .sp-stats td,.sp-stats th{padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.08);text-align:center}
 .sp-stats th{color:#7fb0ff;font-size:11px;letter-spacing:.08em}
 .sp-stats tr.mine td{background:rgba(255,210,87,.1);color:#ffd257}
 .sp-ot{color:#ff9d5c;font-size:12px;text-align:center;margin:4px 0}
 .sp-hidden{display:none!important}
-`;
+/* V5 卡片选择组 */
+.sp-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:6px 0}
+.sp-cards.c2{grid-template-columns:repeat(2,1fr)}
+.sp-card{position:relative;background:rgba(140,200,255,.06);border:1px solid rgba(140,200,255,.28);border-radius:6px;padding:10px 8px;cursor:pointer;text-align:center;overflow:hidden;transition:transform .08s}
+.sp-card:hover{background:rgba(140,200,255,.14)}
+.sp-card.on{border-color:#ffd257;background:rgba(255,210,87,.1);box-shadow:0 0 0 1px rgba(255,210,87,.4)}
+.sp-card .cc-bg{position:absolute;inset:0;opacity:.28}
+.sp-card .cc-txt{position:relative;font-size:14px;font-weight:600;letter-spacing:.03em}
+.sp-card .cc-tag{position:relative;font-size:10px;color:rgba(223,232,240,.6);margin-top:2px;letter-spacing:.1em}
+/* V5 自定义下拉 */
+.sp-dd{position:relative;min-width:150px}
+.sp-dd-btn{width:100%;background:#0a0e12;border:1px solid rgba(140,200,255,.35);color:#dfe8f0;border-radius:4px;padding:6px 10px;font-size:13px;text-align:left;cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sp-dd-btn::after{content:'▾';opacity:.6}
+.sp-dd.open .sp-dd-btn{border-color:rgba(255,210,87,.6)}
+.sp-dd-menu{display:none;position:absolute;top:100%;left:0;right:0;background:#0d1117;border:1px solid rgba(140,200,255,.4);border-radius:4px;margin-top:2px;z-index:5;max-height:220px;overflow-y:auto}
+.sp-dd.open .sp-dd-menu{display:block}
+.sp-dd-item{padding:6px 10px;font-size:13px;cursor:pointer}
+.sp-dd-item:hover{background:rgba(140,200,255,.18)}
+.sp-dd-item.on{color:#ffd257}
+/* V5 开关 */
+.sp-toggle{position:relative;width:40px;height:20px;background:rgba(140,200,255,.15);border:1px solid rgba(140,200,255,.4);border-radius:10px;cursor:pointer;flex-shrink:0}
+.sp-toggle::after{content:'';position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:#8fa8c0;transition:left .12s}
+.sp-toggle.on{background:rgba(255,210,87,.2);border-color:rgba(255,210,87,.6)}
+.sp-toggle.on::after{left:21px;background:#ffd257}
+/* V5 滑块 */
+input[type=range].sp-range{width:150px;-webkit-appearance:none;appearance:none;height:4px;background:rgba(140,200,255,.25);border-radius:2px;outline:none}
+input[type=range].sp-range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#ffd257;cursor:pointer;border:2px solid #0a0e12}
+input[type=range].sp-range::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#ffd257;cursor:pointer;border:2px solid #0a0e12}
+/* V5 文本框 */
+.sp-text{background:#0a0e12;border:1px solid rgba(140,200,255,.35);color:#dfe8f0;border-radius:3px;padding:5px 8px;font-size:13px;font-family:inherit;max-width:170px}
+`
 
 function injectStyle(): void {
   if (document.getElementById('sp-menu-style')) return
@@ -51,6 +96,54 @@ export interface MatchEndStats {
   overtime: number
   seed: number
   rows: { name: string; team: string; kills: number; deaths: number; dmg: number; hs: number; mine: boolean }[]
+}
+
+/** V5 卡片组：点击选中，返回 { el, value() } */
+function cardGroup(
+  host: HTMLElement,
+  items: { key: string; text: string; tag?: string; bg?: string }[],
+  current: string,
+  onPick: (key: string) => void,
+  twoCol = false,
+): { el: HTMLElement; value: () => string } {
+  const wrap = document.createElement('div')
+  wrap.className = 'sp-cards' + (twoCol ? ' c2' : '')
+  let sel = current
+  const cards: HTMLElement[] = []
+  for (const it of items) {
+    const c = document.createElement('div')
+    c.className = 'sp-card'
+    if (it.bg) {
+      const bg = document.createElement('div')
+      bg.className = 'cc-bg'
+      bg.style.background = it.bg
+      c.appendChild(bg)
+    }
+    const tx = document.createElement('div')
+    tx.className = 'cc-txt'
+    tx.textContent = it.text
+    c.appendChild(tx)
+    if (it.tag) {
+      const tg = document.createElement('div')
+      tg.className = 'cc-tag'
+      tg.textContent = it.tag
+      c.appendChild(tg)
+    }
+    const refresh = (): void => {
+      c.classList.toggle('on', sel === it.key)
+    }
+    c.addEventListener('click', () => {
+      sel = it.key
+      cards.forEach((x) => x.classList.remove('on'))
+      refresh()
+      onPick(it.key)
+    })
+    refresh()
+    cards.push(c)
+    wrap.appendChild(c)
+  }
+  host.appendChild(wrap)
+  return { el: wrap, value: () => sel }
 }
 
 export class MenuUI {
@@ -73,7 +166,6 @@ export class MenuUI {
     this.root = container
     this.settingsForms = loadSettings()
     this.matchCfg = loadMatchConfig()
-    // 初始显示主菜单
     this.showMenu()
   }
 
@@ -99,13 +191,11 @@ export class MenuUI {
     const cols = this.mkEl('div', 'sp-cols')
     panel.appendChild(cols)
 
-    // ===== 生涯列（#40） =====
     const careerCol = this.mkEl('div', 'sp-col')
     cols.appendChild(careerCol)
     careerCol.style.display = 'none'
     this.fillCareer(careerCol)
 
-    // tab 切换
     const showMatch = (): void => {
       matchTab.classList.add('active')
       setTab.classList.remove('active')
@@ -135,60 +225,73 @@ export class MenuUI {
     setTab.addEventListener('click', showSettings)
     careerTab.addEventListener('click', showCareer)
 
-    // ===== 对局列 =====
+    // ===== 对局列（V5 卡片化） =====
     const matchCol = this.mkEl('div', 'sp-col')
     cols.appendChild(matchCol)
-    matchCol.appendChild(this.mkEl('div', 'sp-sec', '匹配'))
-
-    const mapSel = this.mkSelect('地图', AVAILABLE_MAPS.map((m) => m.label), this.matchCfg.mapId)
-    matchCol.appendChild(mapSel)
-
-    const modeSel = this.mkSelect('模式', ['爆破', '死斗', '团队死斗'], modeLabel(this.matchCfg.mode))
-    matchCol.appendChild(modeSel)
-
-    const sideSel = this.mkSelect('阵营', ['T（进攻）', 'CT（防守）'], this.matchCfg.playerSide === 'T' ? 0 : 1)
-    matchCol.appendChild(sideSel)
-
-    matchCol.appendChild(
-      this.mkRange('Bot 难度', 1, 10, 1, this.matchCfg.difficulty, (v) => (this.matchCfg.difficulty = v)),
-    )
-    matchCol.appendChild(
-      this.mkRange('Bot 总数', 1, 19, 2, this.matchCfg.botCount, (v) => (this.matchCfg.botCount = v)),
+    matchCol.appendChild(this.mkEl('div', 'sp-sec', '地图'))
+    const mapGroup = cardGroup(
+      matchCol,
+      AVAILABLE_MAPS.map((m) => ({ key: m.id, text: m.id.replace('de_', ''), tag: MAP_CARD[m.id]?.tag ?? m.label, bg: MAP_CARD[m.id]?.bg })),
+      this.matchCfg.mapId,
+      (k) => (this.matchCfg.mapId = k),
     )
 
-    const nameInp = this.mkText('玩家名', this.matchCfg.playerName, (v) => (this.matchCfg.playerName = v))
-    matchCol.appendChild(nameInp)
+    matchCol.appendChild(this.mkEl('div', 'sp-sec', '模式'))
+    cardGroup(
+      matchCol,
+      [
+        { key: 'de', text: '爆破', tag: '炸弹 · 攻守', bg: MODE_CARD.de.bg },
+        { key: 'dm', text: '死斗', tag: '个人目标', bg: MODE_CARD.dm.bg },
+        { key: 'tdm', text: '团队死斗', tag: '队伍目标', bg: MODE_CARD.tdm.bg },
+      ],
+      this.matchCfg.mode,
+      (k) => (this.matchCfg.mode = k as MatchConfig['mode']),
+    )
 
-    const seedInp = this.mkText('种子（可选）', String(this.matchCfg.seed ?? ''), (v) => {
-      const n = parseInt(v, 10)
-      this.matchCfg.seed = Number.isFinite(n) && v.trim() !== '' ? n : undefined
-    })
-    matchCol.appendChild(seedInp)
+    matchCol.appendChild(this.mkEl('div', 'sp-sec', '阵营'))
+    cardGroup(
+      matchCol,
+      [
+        { key: 'T', text: 'T · 进攻', tag: '恐怖分子', bg: SIDE_CARD.T.bg },
+        { key: 'CT', text: 'CT · 防守', tag: '反恐精英', bg: SIDE_CARD.CT.bg },
+      ],
+      this.matchCfg.playerSide,
+      (k) => (      this.matchCfg.playerSide = k as 'T' | 'CT'),
+      true,
+    )
+
+    matchCol.appendChild(this.mkEl('div', 'sp-sec', '参数'))
+    matchCol.appendChild(this.mkRange('Bot 难度', 1, 10, 1, this.matchCfg.difficulty, (v) => (this.matchCfg.difficulty = v)))
+    matchCol.appendChild(this.mkRange('Bot 总数', 1, 19, 2, this.matchCfg.botCount, (v) => (this.matchCfg.botCount = v)))
+    matchCol.appendChild(this.mkText('玩家名', this.matchCfg.playerName, (v) => (this.matchCfg.playerName = v)))
+    matchCol.appendChild(
+      this.mkText('种子（可选）', String(this.matchCfg.seed ?? ''), (v) => {
+        const n = parseInt(v, 10)
+        this.matchCfg.seed = Number.isFinite(n) && v.trim() !== '' ? n : undefined
+      }),
+    )
 
     const startBtn = this.mkEl('button', 'sp-btn primary', '开 始 对 局')
     startBtn.addEventListener('click', () => {
-      this.matchCfg.mapId = (AVAILABLE_MAPS[Number(mapSel.value)].id) as MapId
-      this.matchCfg.mode = modeId(modeSel.value)
-      this.matchCfg.playerSide = Number(sideSel.value) === 0 ? 'T' : 'CT'
+      this.matchCfg.mapId = mapGroup.value() as MapId
       saveMatchConfig(this.matchCfg)
       this.cb.onStart(this.matchCfg)
     })
     matchCol.appendChild(startBtn)
 
-    // ===== 设置列（#7） =====
+    // ===== 设置列（V5 自定义控件） =====
     const setCol = this.mkEl('div', 'sp-col')
     cols.appendChild(setCol)
     const s = this.settingsForms
     setCol.appendChild(this.mkEl('div', 'sp-sec', '画面'))
     setCol.appendChild(this.mkRange('视场角 FOV', 60, 110, 1, s.fov, (v) => (s.fov = v)))
-    const qualSel = this.mkSelect('画质', ['低', '中', '高'], s.quality)
+    const qualSel = this.mkDropdown('画质', ['低', '中', '高'], QUAL_LABELS.indexOf(s.quality), (i) => (s.quality = QUAL_LABELS[i]))
+    const resoSel = this.mkDropdown('渲染分辨率', ['1x', '1.5x', '2x'], [1, 1.5, 2].indexOf(s.resolution), (i) => (s.resolution = [1, 1.5, 2][i] as 1 | 1.5 | 2))
     setCol.appendChild(qualSel)
-    const resoSel = this.mkSelect('渲染分辨率', ['1x', '1.5x', '2x'], String(s.resolution))
     setCol.appendChild(resoSel)
-    const shakeChk = this.mkChk('屏幕震动', s.screenShake, (v) => (s.screenShake = v))
-    setCol.appendChild(shakeChk)
-    const mmChk = this.mkChk('显示小地图', s.showMinimap, (v) => (s.showMinimap = v))
-    setCol.appendChild(mmChk)
+    setCol.appendChild(this.mkToggle('屏幕震动', s.screenShake, (v) => (s.screenShake = v)))
+    setCol.appendChild(this.mkToggle('显示小地图', s.showMinimap, (v) => (s.showMinimap = v)))
+    setCol.appendChild(this.mkToggle('调试面板', s.showDebug, (v) => (s.showDebug = v)))
 
     setCol.appendChild(this.mkEl('div', 'sp-sec', '操作'))
     setCol.appendChild(this.mkRange('鼠标灵敏度', 0.2, 3, 0.05, s.mouseSens, (v) => (s.mouseSens = v)))
@@ -197,7 +300,7 @@ export class MenuUI {
     setCol.appendChild(this.mkRange('音量', 0, 1, 0.05, s.volume, (v) => (s.volume = v)))
 
     setCol.appendChild(this.mkEl('div', 'sp-sec', '准星'))
-    const chStyle = this.mkSelect('样式', ['十字', '圆点', '圆圈'], s.crosshair.style)
+    const chStyle = this.mkDropdown('样式', ['十字', '圆点', '圆圈'], CROSSHAIR_STYLES.indexOf(s.crosshair.style), (i) => (s.crosshair.style = CROSSHAIR_STYLES[i]))
     setCol.appendChild(chStyle)
     const chColor = document.createElement('input')
     chColor.type = 'color'
@@ -251,19 +354,13 @@ export class MenuUI {
     }
 
     setCol.appendChild(this.mkEl('div', 'sp-sec', '其他'))
-    const langSel = this.mkSelect('语言', ['中文', 'English'], s.language === 'zh' ? 0 : 1)
+    const langSel = this.mkDropdown('语言', ['中文', 'English'], s.language === 'zh' ? 0 : 1, (i) => (s.language = i === 0 ? 'zh' : 'en'))
+    const teamSel = this.mkDropdown('阵营色', ['默认', '色盲友好'], s.teamColors === 'default' ? 0 : 1, (i) => (s.teamColors = i === 0 ? 'default' : 'deuteranopia'))
     setCol.appendChild(langSel)
-    const teamSel = this.mkSelect('阵营色', ['默认', '色盲友好'], s.teamColors)
     setCol.appendChild(teamSel)
 
     const applyBtn = this.mkEl('button', 'sp-btn', '保 存 设 置')
     applyBtn.addEventListener('click', () => {
-      s.quality = QUAL_LABELS[Number(qualSel.value)]
-      s.resolution = Number(resoSel.value) as 1 | 1.5 | 2
-      s.crosshair.style = CROSSHAIR_STYLES[Number(chStyle.value)]
-      s.crosshair.color = chColor.value
-      s.language = Number(langSel.value) === 0 ? 'zh' : 'en'
-      s.teamColors = Number(teamSel.value) === 0 ? 'default' : 'deuteranopia'
       setLanguage(s.language)
       saveSettings(s)
       this.applySettings()
@@ -275,11 +372,9 @@ export class MenuUI {
   }
 
   private applySettings(): void {
-    // main.ts 注入的实时生效回调
     ;(this.root as HTMLElement & { __onSettingsApplied?: (s: Settings) => void }).__onSettingsApplied?.(this.settingsForms)
   }
 
-  /** #40 生涯 tab 内容 */
   private fillCareer(col: HTMLElement): void {
     col.innerHTML = ''
     col.appendChild(this.mkEl('div', 'sp-sec', '生涯'))
@@ -292,7 +387,6 @@ export class MenuUI {
     summary.style.fontSize = '12px'
     summary.style.opacity = '0.8'
     col.appendChild(summary)
-
     col.appendChild(this.mkEl('div', 'sp-sec', '最近对局'))
     const recent = career.matches.slice(-10).reverse()
     if (recent.length === 0) {
@@ -300,8 +394,7 @@ export class MenuUI {
       return
     }
     for (const m of recent) {
-      const label =
-        m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '平'
+      const label = m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '平'
       const row = this.mkEl('div', 'sp-row', `${label} ${m.score[0]}:${m.score[1]} · ${m.mapId} · K${m.k}/D${m.d}`)
       col.appendChild(row)
     }
@@ -400,20 +493,54 @@ export class MenuUI {
     return el
   }
 
-  private mkSelect(label: string, opts: string[], current: string | number): HTMLSelectElement {
+  /** V5 自定义下拉（替代原生 select） */
+  private mkDropdown(label: string, opts: string[], current: number, onPick: (idx: number) => void): HTMLElement {
     const row = this.mkEl('div', 'sp-row')
     row.appendChild(this.mkEl('label', '', label))
-    const sel = document.createElement('select')
+    const dd = document.createElement('div')
+    dd.className = 'sp-dd'
+    const btn = document.createElement('div')
+    btn.className = 'sp-dd-btn'
+    const val = document.createElement('span')
+    val.textContent = opts[Math.max(0, current)]
+    btn.appendChild(val)
+    const menu = document.createElement('div')
+    menu.className = 'sp-dd-menu'
+    let sel = current
     opts.forEach((o, i) => {
-      const opt = document.createElement('option')
-      opt.value = String(i)
-      opt.textContent = o
-      sel.appendChild(opt)
+      const item = document.createElement('div')
+      item.className = 'sp-dd-item' + (i === sel ? ' on' : '')
+      item.textContent = o
+      item.addEventListener('click', () => {
+        sel = i
+        menu.querySelectorAll('.sp-dd-item').forEach((x, j) => x.classList.toggle('on', j === i))
+        val.textContent = opts[i]
+        dd.classList.remove('open')
+        onPick(i)
+      })
+      menu.appendChild(item)
     })
-    const idx = typeof current === 'number' ? current : opts.indexOf(current)
-    sel.value = String(idx >= 0 ? idx : 0)
-    row.appendChild(sel)
-    return sel
+    btn.addEventListener('click', () => dd.classList.toggle('open'))
+    dd.appendChild(btn)
+    dd.appendChild(menu)
+    row.appendChild(dd)
+    return row
+  }
+
+  /** V5 开关（替代原生 checkbox） */
+  private mkToggle(label: string, checked: boolean, onInput: (v: boolean) => void): HTMLElement {
+    const row = this.mkEl('div', 'sp-row')
+    row.appendChild(this.mkEl('label', '', label))
+    const tg = document.createElement('div')
+    tg.className = 'sp-toggle' + (checked ? ' on' : '')
+    let on = checked
+    tg.addEventListener('click', () => {
+      on = !on
+      tg.classList.toggle('on', on)
+      onInput(on)
+    })
+    row.appendChild(tg)
+    return row
   }
 
   private mkRange(label: string, min: number, max: number, step: number, value: number, onInput: (v: number) => void): HTMLElement {
@@ -421,12 +548,14 @@ export class MenuUI {
     row.appendChild(this.mkEl('label', '', label))
     const inp = document.createElement('input')
     inp.type = 'range'
+    inp.className = 'sp-range'
     inp.min = String(min)
     inp.max = String(max)
     inp.step = String(step)
     inp.value = String(value)
     const valEl = this.mkEl('span', '', String(value))
     valEl.style.opacity = '0.6'
+    valEl.style.fontSize = '12px'
     inp.addEventListener('input', () => {
       valEl.textContent = inp.value
       onInput(Number(inp.value))
@@ -441,19 +570,9 @@ export class MenuUI {
     row.appendChild(this.mkEl('label', '', label))
     const inp = document.createElement('input')
     inp.type = 'text'
+    inp.className = 'sp-text'
     inp.value = value
     inp.addEventListener('input', () => onInput(inp.value))
-    row.appendChild(inp)
-    return row
-  }
-
-  private mkChk(label: string, checked: boolean, onInput: (v: boolean) => void): HTMLElement {
-    const row = this.mkEl('div', 'sp-row')
-    row.appendChild(this.mkEl('label', '', label))
-    const inp = document.createElement('input')
-    inp.type = 'checkbox'
-    inp.checked = checked
-    inp.addEventListener('input', () => onInput(inp.checked))
     row.appendChild(inp)
     return row
   }
@@ -461,13 +580,6 @@ export class MenuUI {
 
 const QUAL_LABELS: Settings['quality'][] = ['low', 'medium', 'high']
 const CROSSHAIR_STYLES: Settings['crosshair']['style'][] = ['cross', 'dot', 'circle']
-
-function modeLabel(mode: MatchConfig['mode']): number {
-  return mode === 'de' ? 0 : mode === 'dm' ? 1 : 2
-}
-function modeId(idx: string): MatchConfig['mode'] {
-  return Number(idx) === 1 ? 'dm' : Number(idx) === 2 ? 'tdm' : 'de'
-}
 
 /** 读取本局配置（供 main.ts 组装 MatchOptions） */
 export function matchOptionsFromCfg(cfg: MatchConfig) {
