@@ -27,6 +27,8 @@ export interface WeaponDef {
   pellets: number
   /** 护甲穿透 0-1（影响弹道/护甲交互；护甲吸收率统一 50%，见 weapon.shotDamage） */
   armorPenetration: number
+  /** G1 穿墙（wallbang）能力 0-1：≥0.9 可穿 maxLayers 层，0.01-0.89 穿 1 层，缺省=不可穿透（刀/投掷物） */
+  wallPenetration?: number
   falloffStart: number
   falloffEnd: number
   rangeModifier: number
@@ -35,10 +37,13 @@ export interface WeaponDef {
   magazine: number
   reserve: number
   reloadMs: number
-  /** 固定后坐力序列 [pitchKick, yawKick]（弧度）；停火 3s 回卷序列（对标 CS 预压后坐） */
+  /** 固定后坐力序列 [pitchKick, yawKick]（弧度）；全自动武器 30 发独立条目（G2 完整弹道图）；
+   * 停火每 400ms 回卷一步（recoilRecoverMs），3s 完全回卷（recoilResetMs，对标 CS 预压后坐） */
   recoilPattern: [number, number][]
-  /** 散布锥角（度）：stand=站定基础；move/air=满速时额外量（按速度连续插值）；burstGrow=逐发增量（时间衰减） */
-  spreadDeg: { stand: number; move: number; air: number; burstGrow: number }
+  /** 散布锥角（度）：stand=站定基础；crouch=蹲下站定基础（G4：约 stand 的 60-70%）；
+   * move/air=满速时额外量（按速度连续插值）；burstGrow=逐发增量（时间衰减）。
+   * 蹲下取 crouch 与移动插值的最小值（蹲射更准）。 */
+  spreadDeg: { stand: number; crouch?: number; move: number; air: number; burstGrow: number }
   moveSpeedScale: number
   /** 近战参数（knife） */
   meleeRange?: number
@@ -67,7 +72,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 0,
     reloadMs: 0,
     recoilPattern: [],
-    spreadDeg: { stand: 0, move: 0, air: 0, burstGrow: 0 },
+    spreadDeg: { stand: 0, crouch: 0, move: 0, air: 0, burstGrow: 0 },
     moveSpeedScale: 1,
     meleeRange: 48,
     meleeDamage: 55,
@@ -82,6 +87,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.5,
     pellets: 1,
     armorPenetration: 0.6,
+    wallPenetration: 0.25,
     falloffStart: 300,
     falloffEnd: 1000,
     rangeModifier: 0.75,
@@ -98,7 +104,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
       [0.0044, 0],
       [0.0048, -0.001],
     ],
-    spreadDeg: { stand: 0.8, move: 4.0, air: 8.0, burstGrow: 0 },
+    spreadDeg: { stand: 0.8, crouch: 0.55, move: 4.0, air: 8.0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   deagle: {
@@ -111,6 +117,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.18,
     pellets: 1,
     armorPenetration: 0.7,
+    wallPenetration: 0.25,
     falloffStart: 300,
     falloffEnd: 900,
     rangeModifier: 0.6,
@@ -120,7 +127,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 35,
     reloadMs: 1800,
     recoilPattern: [[0.02, 0.002], [0.018, -0.002]],
-    spreadDeg: { stand: 1.2, move: 4.5, air: 9.0, burstGrow: 0 },
+    spreadDeg: { stand: 1.2, crouch: 0.8, move: 4.5, air: 9.0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   usp: {
@@ -133,6 +140,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.6,
     pellets: 1,
     armorPenetration: 0.6,
+    wallPenetration: 0.15,
     falloffStart: 300,
     falloffEnd: 900,
     rangeModifier: 0.7,
@@ -149,7 +157,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
       [0.004, 0],
       [0.0045, -0.0006],
     ],
-    spreadDeg: { stand: 0.8, move: 4.0, air: 8.0, burstGrow: 0 },
+    spreadDeg: { stand: 0.8, crouch: 0.55, move: 4.0, air: 8.0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   p250: {
@@ -162,6 +170,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.0,
     pellets: 1,
     armorPenetration: 0.5,
+    wallPenetration: 0.18,
     falloffStart: 300,
     falloffEnd: 800,
     rangeModifier: 0.7,
@@ -176,7 +185,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
       [0.004, -0.0008],
       [0.0045, 0.0005],
     ],
-    spreadDeg: { stand: 0.8, move: 4.0, air: 8.0, burstGrow: 0 },
+    spreadDeg: { stand: 0.8, crouch: 0.55, move: 4.0, air: 8.0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   fiveSeven: {
@@ -189,6 +198,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.0,
     pellets: 1,
     armorPenetration: 0.5,
+    wallPenetration: 0.2,
     falloffStart: 300,
     falloffEnd: 900,
     rangeModifier: 0.7,
@@ -205,7 +215,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
       [0.004, 0],
       [0.0045, -0.0006],
     ],
-    spreadDeg: { stand: 0.8, move: 4.0, air: 8.0, burstGrow: 0 },
+    spreadDeg: { stand: 0.8, crouch: 0.55, move: 4.0, air: 8.0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   tec9: {
@@ -218,6 +228,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.0,
     pellets: 1,
     armorPenetration: 0.5,
+    wallPenetration: 0.18,
     falloffStart: 300,
     falloffEnd: 900,
     rangeModifier: 0.7,
@@ -232,7 +243,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
       [0.0034, -0.0008],
       [0.0038, 0.0005],
     ],
-    spreadDeg: { stand: 0.8, move: 4.0, air: 8.0, burstGrow: 0 },
+    spreadDeg: { stand: 0.8, crouch: 0.55, move: 4.0, air: 8.0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   mp9: {
@@ -245,6 +256,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.2,
     pellets: 1,
     armorPenetration: 0.4,
+    wallPenetration: 0.3,
     falloffStart: 300,
     falloffEnd: 900,
     rangeModifier: 0.7,
@@ -263,7 +275,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
       [0.0024, 0],
       [0.002, 0.0003],
     ],
-    spreadDeg: { stand: 1.2, move: 4.5, air: 9.0, burstGrow: 0.25 },
+    spreadDeg: { stand: 1.2, crouch: 0.8, move: 4.5, air: 9.0, burstGrow: 0.25 },
     moveSpeedScale: 1,
   },
   m4: {
@@ -276,6 +288,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 4,
     pellets: 1,
     armorPenetration: 0.75,
+    wallPenetration: 0.5,
     falloffStart: 1300,
     falloffEnd: 4000,
     rangeModifier: 0.7,
@@ -284,21 +297,40 @@ export const WEAPONS: Record<string, WeaponDef> = {
     magazine: 30,
     reserve: 90,
     reloadMs: 2440,
+    /** G2 完整 30 发独立弹道（M4A4 公开弹道形态反推：前 10 发稳定上提，10 发后小幅水平修正，20 发后收窄） */
     recoilPattern: [
-      [0.023, 0],
-      [0.021, 0.006],
-      [0.0195, -0.005],
-      [0.021, 0.004],
-      [0.0195, 0.008],
-      [0.0205, -0.006],
-      [0.018, 0.003],
-      [0.0195, 0.005],
-      [0.016, -0.004],
-      [0.0145, 0.002],
+      [0.006, 0],
+      [0.007, 0.001],
+      [0.007, -0.001],
+      [0.008, 0],
+      [0.008, 0.001],
+      [0.009, 0],
+      [0.009, -0.001],
+      [0.01, 0.001],
+      [0.011, 0],
+      [0.012, 0.001],
+      [0.013, 0.003],
+      [0.014, 0.005],
+      [0.015, 0.004],
+      [0.016, 0.006],
+      [0.017, 0.005],
+      [0.018, 0.007],
+      [0.018, 0.006],
+      [0.019, 0.008],
+      [0.02, 0.007],
+      [0.02, 0.009],
+      [0.021, 0.008],
+      [0.02, 0.01],
+      [0.02, 0.008],
+      [0.019, 0.009],
+      [0.018, 0.007],
+      [0.017, 0.005],
+      [0.016, 0.006],
+      [0.015, 0.003],
+      [0.014, 0.004],
       [0.013, 0],
-      [0.011, 0.001],
     ],
-    spreadDeg: { stand: 0.6, move: 2.0, air: 4.0, burstGrow: 0.3 },
+    spreadDeg: { stand: 0.6, crouch: 0.4, move: 2.0, air: 4.0, burstGrow: 0.3 },
     moveSpeedScale: 1,
   },
   ak: {
@@ -311,6 +343,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 3.08,
     pellets: 1,
     armorPenetration: 0.7,
+    wallPenetration: 0.55,
     falloffStart: 1100,
     falloffEnd: 3300,
     rangeModifier: 0.69,
@@ -319,21 +352,41 @@ export const WEAPONS: Record<string, WeaponDef> = {
     magazine: 30,
     reserve: 90,
     reloadMs: 2500,
+    /** G2 完整 30 发独立弹道（AK-47 公开弹道形态反推：前 7 发近似直线，随后上扬，
+     *  10-15 发左漂，16-24 发右摆，25-30 发尾部收窄摆动） */
     recoilPattern: [
-      [0.025, 0.001],
-      [0.023, 0.007],
+      [0.008, 0],
+      [0.009, 0.0005],
+      [0.008, -0.0005],
+      [0.009, 0],
+      [0.01, 0.001],
+      [0.009, -0.001],
+      [0.01, 0],
+      [0.014, 0.002],
+      [0.016, -0.002],
+      [0.018, -0.006],
+      [0.019, -0.008],
+      [0.02, -0.007],
       [0.021, -0.006],
-      [0.022, 0.005],
-      [0.021, 0.009],
-      [0.022, -0.007],
-      [0.019, 0.003],
-      [0.021, 0.006],
-      [0.017, -0.005],
-      [0.016, 0.002],
-      [0.014, 0],
-      [0.012, 0.001],
+      [0.022, -0.004],
+      [0.022, -0.002],
+      [0.023, 0.004],
+      [0.024, 0.01],
+      [0.025, 0.014],
+      [0.026, 0.012],
+      [0.026, 0.016],
+      [0.025, 0.014],
+      [0.024, 0.018],
+      [0.023, 0.012],
+      [0.022, 0.008],
+      [0.021, 0.004],
+      [0.019, 0.008],
+      [0.018, 0.002],
+      [0.017, 0.005],
+      [0.016, 0],
+      [0.015, -0.003],
     ],
-    spreadDeg: { stand: 0.7, move: 2.2, air: 4.5, burstGrow: 0.35 },
+    spreadDeg: { stand: 0.7, crouch: 0.45, move: 2.2, air: 4.5, burstGrow: 0.35 },
     moveSpeedScale: 1,
   },
   awp: {
@@ -346,6 +399,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.3,
     pellets: 1,
     armorPenetration: 0.8,
+    wallPenetration: 0.95,
     falloffStart: 0,
     falloffEnd: 0,
     rangeModifier: 1,
@@ -355,7 +409,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 30,
     reloadMs: 3800,
     recoilPattern: [[0.02, 0]],
-    spreadDeg: { stand: 0.2, move: 3.0, air: 6.0, burstGrow: 0 },
+    spreadDeg: { stand: 0.2, crouch: 0.15, move: 3.0, air: 6.0, burstGrow: 0 },
     moveSpeedScale: 1,
     zoom: { fovs: [40, 18], sensScale: 0.53, sensScales: [0.53, 0.19] },
   },
@@ -368,6 +422,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     damage: 12,
     pellets: 8,
     armorPenetration: 0.2,
+    wallPenetration: 0.25,
     falloffStart: 100,
     falloffEnd: 400,
     rangeModifier: 0.4,
@@ -377,7 +432,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 28,
     reloadMs: 2200,
     recoilPattern: [[0.008, 0]],
-    spreadDeg: { stand: 0.6, move: 4.0, air: 8.0, burstGrow: 0 },
+    spreadDeg: { stand: 0.6, crouch: 0.4, move: 4.0, air: 8.0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   p90: {
@@ -390,6 +445,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.0,
     pellets: 1,
     armorPenetration: 0.4,
+    wallPenetration: 0.35,
     falloffStart: 400,
     falloffEnd: 1400,
     rangeModifier: 0.7,
@@ -423,6 +479,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 3.3,
     pellets: 1,
     armorPenetration: 0.7,
+    wallPenetration: 0.5,
     falloffStart: 1000,
     falloffEnd: 3000,
     rangeModifier: 0.7,
@@ -452,6 +509,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     headMul: 2.32,
     pellets: 1,
     armorPenetration: 0.8,
+    wallPenetration: 0.8,
     falloffStart: 1200,
     falloffEnd: 4000,
     rangeModifier: 0.5,
@@ -474,6 +532,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     damage: 15,
     pellets: 8,
     armorPenetration: 0.3,
+    wallPenetration: 0.2,
     falloffStart: 80,
     falloffEnd: 250,
     rangeModifier: 0.3,
@@ -504,7 +563,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 4,
     reloadMs: 0,
     recoilPattern: [],
-    spreadDeg: { stand: 0, move: 0, air: 0, burstGrow: 0 },
+    spreadDeg: { stand: 0, crouch: 0, move: 0, air: 0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   flash: {
@@ -525,7 +584,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 5,
     reloadMs: 0,
     recoilPattern: [],
-    spreadDeg: { stand: 0, move: 0, air: 0, burstGrow: 0 },
+    spreadDeg: { stand: 0, crouch: 0, move: 0, air: 0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   smoke: {
@@ -546,7 +605,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 3,
     reloadMs: 0,
     recoilPattern: [],
-    spreadDeg: { stand: 0, move: 0, air: 0, burstGrow: 0 },
+    spreadDeg: { stand: 0, crouch: 0, move: 0, air: 0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
   molotov: {
@@ -567,7 +626,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserve: 2,
     reloadMs: 0,
     recoilPattern: [],
-    spreadDeg: { stand: 0, move: 0, air: 0, burstGrow: 0 },
+    spreadDeg: { stand: 0, crouch: 0, move: 0, air: 0, burstGrow: 0 },
     moveSpeedScale: 1,
   },
 }
@@ -585,6 +644,8 @@ export interface WeaponInstance {
   burstCount: number
   /** 最近开火 tick（停火 3s 后后坐序列回卷，对标 CS） */
   lastShotTick: number
+  /** G2 停火回卷基准：进入停火时的 recoilIndex 快照（0=未在停火恢复中），避免逐 tick 重复扣减 */
+  recoilStopIndex: number
 }
 
 export function newWeaponInstance(defId: string): WeaponInstance {
@@ -598,5 +659,6 @@ export function newWeaponInstance(defId: string): WeaponInstance {
     recoilIndex: 0,
     burstCount: 0,
     lastShotTick: 0,
+    recoilStopIndex: 0,
   }
 }

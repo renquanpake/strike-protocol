@@ -5,7 +5,7 @@ import type { EventBus } from '../../engine/eventbus'
 import { v3, type Vec3 } from '../../engine/math'
 import { targetAABBs } from '../entities/target'
 import { humanAABBs } from '../entities/bot'
-import { raycastBoxes } from '../physics/raycast'
+import { raycastBoxes, raycastBoxesWithPenetration } from '../physics/raycast'
 import type { PreppedLevel } from '../physics/collision'
 import type { HitboxPart } from '../types'
 import { grantKillReward } from '../economy'
@@ -115,14 +115,22 @@ export function updateWeaponSystem(state: GameState, p: PlayerEntity, events: Ev
 
   const w = activeWeapon(p)
   if (w && !inp.fireHeld) w.burstCount = 0
-  // 后坐力停火回卷（CS：停火 ~3s 后序列回到第 1 发）
-  if (
-    w &&
-    !inp.fireHeld &&
-    w.lastShotTick > 0 &&
-    state.tick - w.lastShotTick >= msToTicks(3000)
-  ) {
-    w.recoilIndex = 0
+  // 后坐力停火回卷（G2）：停火每 400ms 回卷一步（恢复插值，避免跳变），满 3s 完全回卷（对标 CS 预压后坐）。
+  // 以"进入停火时的索引快照"为基准做幂等计算，避免逐 tick 重复扣减。
+  if (w && w.lastShotTick > 0 && w.recoilIndex > 0) {
+    if (inp.fireHeld || inp.fireQueued) {
+      // 重新开火：清除停火快照，本次开火从当前序列位置继续
+      w.recoilStopIndex = 0
+    } else {
+      if (w.recoilStopIndex === 0) w.recoilStopIndex = w.recoilIndex // 首次进入停火，记录基准
+      const stopTicks = state.tick - w.lastShotTick
+      if (stopTicks >= msToTicks(CONFIG.recoilResetMs)) {
+        w.recoilIndex = 0
+      } else {
+        const steps = Math.floor(stopTicks / msToTicks(CONFIG.recoilRecoverMs))
+        w.recoilIndex = Math.max(0, w.recoilStopIndex - steps)
+      }
+    }
   }
 }
 
@@ -216,7 +224,23 @@ export function fireWeapon(
   )
 
   const boxes = hitBoxes(state, level, p.id)
-  let wallHit: { point: Vec3; normal: Vec3 } | null = null
+  let wallHit: { point: Vec3; normal: Vec3; penetrated: boolean } | null = null
+  let anyPenetrated = false
+  // G1 穿墙（wallbang）：按武器 wallPenetration 决定可穿层数（≥0.9 穿 maxLayers，其余 1 层），材质衰减见 CONFIG.wallbang
+  const wp = def.wallPenetration ?? 0
+  const penMaxLayers = wp > 0 ? (wp >= 0.9 ? CONFIG.wallbang.maxLayers : 1) : 0
+  const brushMaterialOf = (target: string): string | undefined =>
+    level.solids[Number(target.slice(6))]?.material
+  const isPenetrable = (target: string): boolean => {
+    if (!target.startsWith('brush:')) return false
+    const mat = brushMaterialOf(target)
+    return mat !== undefined && (CONFIG.wallbang.materials as Record<string, number>)[mat] !== undefined
+  }
+  const attenuationOf = (target: string): number => {
+    const mat = brushMaterialOf(target)
+    return mat ? ((CONFIG.wallbang.materials as Record<string, number>)[mat] ?? 1) : 1
+  }
+
   for (let i = 0; i < def.pellets; i++) {
     const [ox, oy, oz] = state.rng.coneDirection(coneRad)
     const dir: Vec3 = normalize(
@@ -226,18 +250,38 @@ export function fireWeapon(
         forward.z * oz + right.z * ox + up.z * oy,
       ),
     )
-    const hit = raycastBoxes(eye, dir, boxes)
+    let hit
+    let dmgScale = 1
+    let entry: { point: Vec3; normal: Vec3 } | null = null
+    if (penMaxLayers > 0) {
+      const res = raycastBoxesWithPenetration(eye, dir, boxes, isPenetrable, attenuationOf, penMaxLayers)
+      hit = res.hit
+      dmgScale = res.damageScale
+      if (res.penetrated) {
+        anyPenetrated = true
+        if (res.entry) entry = { point: res.entry.point, normal: res.entry.normal }
+      }
+    } else {
+      hit = raycastBoxes(eye, dir, boxes)
+    }
     if (!hit) continue
+    // G1 穿墙命中后距离取眼位→最终命中的总距（衰减正确性）
+    const dist =
+      dmgScale < 1 ? Math.hypot(hit.point.x - eye.x, hit.point.y - eye.y, hit.point.z - eye.z) : hit.t
 
     if (hit.target.startsWith('target:')) {
       const tid = Number(hit.target.split(':')[1])
       const t = state.targets.find((x) => x.id === tid)
       if (!t || !t.alive || !hit.part) continue
       const part = hit.part as HitboxPart
-      const { damage: dmg } = shotDamage(def, part, hit.t, 0)
-      t.health -= dmg
+      const { damage: dmg } = shotDamage(def, part, dist, 0)
+      t.health -= dmg * dmgScale
       t.hitFlashTick = state.tick
-      events.emit({ type: 'hit', victimId: tid, part, damage: dmg, attackerId: p.id })
+      events.emit({ type: 'hit', victimId: tid, part, damage: dmg * dmgScale, attackerId: p.id })
+      // G1 穿墙命中靶子：入口点投射烟尘 decal（仅本地玩家）
+      if (entry && p.id === 0 && !wallHit) {
+        wallHit = { point: entry.point, normal: entry.normal, penetrated: true }
+      }
       if (t.health <= 0) {
         t.alive = false
         t.respawnAtTick = state.tick + msToTicks(2000)
@@ -248,8 +292,12 @@ export function fireWeapon(
       const victim = state.players.find((x) => x.id === vid)
       if (!victim || !victim.alive || !hit.part) continue
       const part = hit.part as HitboxPart
-      const { damage: dmg, armorLost } = shotDamage(def, part, hit.t, victim.armor, victim.helmet)
-      applyPlayerHit(state, p, victim, dmg, def, events, part === 'head', armorLost)
+      const { damage: dmg, armorLost } = shotDamage(def, part, dist, victim.armor, victim.helmet)
+      applyPlayerHit(state, p, victim, dmg * dmgScale, def, events, part === 'head', armorLost)
+      // G1 穿墙命中实体：入口点投射烟尘 decal（仅本地玩家）
+      if (entry && p.id === 0 && !wallHit) {
+        wallHit = { point: entry.point, normal: entry.normal, penetrated: true }
+      }
     } else if (hit.target.startsWith('brush:')) {
       // #35 玻璃：命中玻璃 brush → 一次性碎裂（物理通行 + 渲染隐藏 + 音效/碎片）
       const bi = Number(hit.target.split(':').slice(1).join(':'))
@@ -259,12 +307,15 @@ export function fireWeapon(
         level.solids = level.allSolids.filter((x) => x !== b)
         events.emit({ type: 'glassBreak', x: hit.point.x, y: hit.point.y, z: hit.point.z })
       }
+      // G1 穿墙命中：decals 投在首个穿透点（入口），concrete 厚墙投在最终命中点
+      const at = entry ?? { point: hit.point, normal: hit.normal }
       if (p.id === 0 && !wallHit) {
-        wallHit = { point: hit.point, normal: hit.normal }
+        wallHit = { point: at.point, normal: at.normal, penetrated: entry !== null }
       }
     } else if (p.id === 0 && !wallHit) {
       // 命中地图墙体（仅本地玩家，供印花投射）
-      wallHit = { point: hit.point, normal: hit.normal }
+      const at = entry ?? { point: hit.point, normal: hit.normal }
+      wallHit = { point: at.point, normal: at.normal, penetrated: entry !== null }
     }
   }
   if (wallHit) {
@@ -275,9 +326,10 @@ export function fireWeapon(
       point: wallHit.point,
       normal: wallHit.normal,
       pellets: def.pellets,
+      penetrated: wallHit.penetrated,
     })
   }
-  events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id })
+  events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id, muffled: anyPenetrated, penetrated: anyPenetrated })
 }
 
 function applyPlayerHit(
@@ -292,6 +344,17 @@ function applyPlayerHit(
 ): void {
   victim.health = Math.max(0, victim.health - dmg)
   if (armorLost > 0) victim.armor = Math.max(0, victim.armor - armorLost)
+  // G3 受击减速（tagging）：按伤害比例临时降移速（0.4-0.6s 衰减恢复），护甲降低时长与幅度（CS 标准）
+  if (dmg > 0 && victim.alive) {
+    const tg = CONFIG.tagging
+    const hadArmor = victim.armor > 0 || armorLost > 0
+    const armorMul = hadArmor ? 1 - tg.armorReduction : 1
+    const ms = (tg.minMs + (tg.maxMs - tg.minMs) * Math.min(1, dmg / 50)) * armorMul
+    victim.tagFromTick = state.tick
+    victim.tagUntilTick = state.tick + Math.max(1, msToTicks(ms))
+    // 强度按最终（护甲后）伤害计：护甲减伤已体现在 dmg 上
+    victim.tagStrength = Math.min(tg.maxStrength, dmg * tg.strengthPerDmg)
+  }
   shooter.damageDealt += dmg
   events.emit({ type: 'hit', victimId: victim.id, part: headshot ? 'head' : 'body', damage: dmg, attackerId: shooter.id })
   if (victim.health <= 0) {
@@ -392,7 +455,12 @@ export function spreadDegrees(p: PlayerEntity, def: WeaponDef, _aiming: boolean 
   const hspeed = Math.hypot(p.velocity.x, p.velocity.z)
   const ratio = p.onGround ? Math.min(1, hspeed / CONFIG.moveMaxSpeed) : Math.min(1, hspeed / CONFIG.airMaxSpeed)
   const extra = p.onGround ? def.spreadDeg.move : def.spreadDeg.air
-  return def.spreadDeg.stand + extra * ratio + p.fireSpread
+  const moving = def.spreadDeg.stand + extra * ratio + p.fireSpread
+  if (!p.crouching) return moving
+  // G4 蹲射精度：蹲下基础散布取 crouch（默认 stand 的 65%），蹲下移动插值减半，并与站立/移动值取最小（蹲射更准）
+  const crouchBase = def.spreadDeg.crouch ?? def.spreadDeg.stand * 0.65
+  const crouched = crouchBase + extra * ratio * 0.5 + p.fireSpread
+  return Math.min(crouched, moving)
 }
 
 export function viewForward(yaw: number, pitch: number): Vec3 {

@@ -279,11 +279,13 @@ export class AudioEngine {
     osc.stop(t + dur + 0.02)
   }
 
-  /** 枪声（武器差异化 + 低频冲击） */
-  shot(weaponId: string, x: number, y: number, z: number, isLocal: boolean): void {
+  /** 枪声（武器差异化 + 低频冲击）；muffled=G1 穿墙命中闷声（大幅低通） */
+  shot(weaponId: string, x: number, y: number, z: number, isLocal: boolean, muffled = false): void {
     const p = weaponParams[weaponId] ?? weaponParams.m4
-    if (p.filter > 0) this.noiseBurst(p.filter, 'bandpass', p.dur, p.gain, !isLocal, x, y, z)
-    if (p.sub > 0) this.tone(p.sub, p.dur * 0.8, p.gain * 0.6, 'sine', !isLocal, x, y, z)
+    const f = muffled ? Math.round(p.filter * 0.25) : p.filter
+    const g = muffled ? p.gain * 0.7 : p.gain
+    if (f > 0) this.noiseBurst(f, muffled ? 'lowpass' : 'bandpass', p.dur, g, !isLocal, x, y, z)
+    if (p.sub > 0) this.tone(p.sub, p.dur * 0.8, (muffled ? 0.5 : 0.6) * p.gain, 'sine', !isLocal, x, y, z)
   }
 
   /** 脚步（材质区分） */

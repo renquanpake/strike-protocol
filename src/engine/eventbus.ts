@@ -1,6 +1,6 @@
 /** 最小类型化事件总线：系统产出事件，UI/音频/Bot 消费 */
 export type GameEvent =
-  | { type: 'shot'; shooterId: number; weaponId: string }
+  | { type: 'shot'; shooterId: number; weaponId: string; muffled?: boolean; penetrated?: boolean }
   | {
       type: 'surfaceHit'
       shooterId: number
@@ -8,6 +8,8 @@ export type GameEvent =
       point: { x: number; y: number; z: number }
       normal: { x: number; y: number; z: number }
       pellets: number
+      /** G1 穿墙命中（在首个穿透点投射烟尘 decal + 闷声） */
+      penetrated?: boolean
     }
   | { type: 'hit'; victimId: number; part: string; damage: number; attackerId: number }
   | { type: 'targetKilled'; victimId: number; weaponId: string }

@@ -92,6 +92,10 @@ export interface PlayerEntity {
   roundKillReward: number
   /** 本回合击杀数（回合间歇 MVP 展示用，enterFreeze 清零） */
   roundKills: number
+  /** G3 受击减速（tagging）：命中 tag 起止 tick 与最大降速比（0-1，按时间衰减恢复） */
+  tagFromTick: number
+  tagUntilTick: number
+  tagStrength: number
   /** 本 tick 输入（Bot 为合成输入） */
   input: InputFrame
 }
@@ -229,6 +233,9 @@ export function makePlayer(
     fireSpread: 0,
     roundKillReward: 0,
     roundKills: 0,
+    tagFromTick: -1,
+    tagUntilTick: 0,
+    tagStrength: 0,
     input: emptyInput(),
   }
 }

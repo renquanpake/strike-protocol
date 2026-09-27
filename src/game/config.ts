@@ -70,8 +70,24 @@ export const CONFIG = {
   // 战斗
   /** 连射散布增量（°）的时间衰减（°/s，对标 CS 停火回准） */
   spreadDecayPerSec: 4,
+  /** G2 后坐序列停火回卷：每 400ms 回卷一步（部分恢复，避免跳变），3s 完全回卷第 1 发（对标 CS 预压后坐） */
+  recoilRecoverMs: 400,
+  recoilResetMs: 3000,
   /** 开镜（ADS）时的移速倍率（对标 CS 开镜减速） */
   adsSpeedScale: 0.4,
+  /** G3 受击减速（tagging）：命中后按伤害比例临时降移速（0.4-0.6s 衰减恢复），护甲降低时长与幅度（CS 标准） */
+  tagging: {
+    minMs: 400, // 最小 tag 时长
+    maxMs: 600, // 满伤害 tag 时长
+    strengthPerDmg: 0.01, // 伤害→最大降速比换算（上限 maxStrength）
+    maxStrength: 0.5, // 最大降速比上限
+    armorReduction: 0.5, // 穿戴护甲时 tag 时长与降速比各 ×(1-该值)
+  },
+  /** G1 穿墙（wallbang）：可穿透材质白名单 × 单穿伤害衰减；concrete 厚墙不可穿透仅削弱 */
+  wallbang: {
+    materials: { wood: 0.9, sandbag: 0.7, sand: 0.85 },
+    maxLayers: 2, // 单发最多穿透层数（高 wallPenetration 武器可穿双层木板）
+  },
   botHoldFireRange: 350, // Bot 不开火的最大距离（狙击枪除外）
   botViewDot: -0.34, // Bot 前向视野余弦下限（≈110° 后向不可见，原散落 -0.34 收口）
   botAimTauTicks: 192, // 瞄准收敛时间常数（tick，约 3s）

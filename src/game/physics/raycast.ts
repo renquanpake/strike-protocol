@@ -11,6 +11,78 @@ export interface RayHit {
   normal: Vec3
 }
 
+export interface BoxEntry {
+  id: string
+  part?: string
+  min: Vec3
+  max: Vec3
+}
+
+/** G1 穿墙结果：最终命中 + 累计衰减 + 首个穿透点（供烟尘 decal / 闷声） */
+export interface PenetrationResult {
+  hit: RayHit | null
+  /** 累计伤害衰减系数（各穿透层材质衰减之积，未穿透 = 1） */
+  damageScale: number
+  /** 是否至少穿透了一层材质 */
+  penetrated: boolean
+  /** 首个穿透层命中（入口点） */
+  entry: RayHit | null
+  /** 穿透层数 */
+  layers: number
+}
+
+/**
+ * G1 穿墙（wallbang）：命中 solid 后按材质衰减继续追踪（穿透白名单外的材质/实体为止）。
+ * isPenetrable(id) 判定某 brush 是否可穿透；attenuation(id) 返回该层伤害衰减系数。
+ */
+export function raycastBoxesWithPenetration(
+  origin: Vec3,
+  dir: Vec3,
+  boxes: BoxEntry[],
+  isPenetrable: (target: string) => boolean,
+  attenuation: (target: string) => number,
+  maxLayers: number,
+): PenetrationResult {
+  let o: Vec3 = origin
+  let scale = 1
+  let layers = 0
+  let entry: RayHit | null = null
+  let final: RayHit | null = null
+  for (let guard = 0; guard < Math.max(1, maxLayers + 2); guard++) {
+    const hit = raycastBoxes(o, dir, boxes)
+    if (!hit) break
+    if (hit.target.startsWith('brush:') && layers < maxLayers && isPenetrable(hit.target)) {
+      if (!entry) entry = hit
+      final = hit
+      scale *= attenuation(hit.target)
+      layers += 1
+      // 推进到该盒子的出射面（各轴"远面"交叉时间取最小），保证下一轮不再命中同一盒子
+      const bb = boxes[Number(hit.target.slice(6))]
+      if (bb) {
+        // 当前 origin 在盒内/入口处，沿 dir 前进会先穿过某轴"远面"而离开盒子
+        const farX =
+          Math.abs(dir.x) > 1e-9 ? (dir.x > 0 ? bb.max.x - o.x : o.x - bb.min.x) / Math.abs(dir.x) : Infinity
+        const farY =
+          Math.abs(dir.y) > 1e-9 ? (dir.y > 0 ? bb.max.y - o.y : o.y - bb.min.y) / Math.abs(dir.y) : Infinity
+        const farZ =
+          Math.abs(dir.z) > 1e-9 ? (dir.z > 0 ? bb.max.z - o.z : o.z - bb.min.z) / Math.abs(dir.z) : Infinity
+        const tExit = Math.min(farX, farY, farZ)
+        if (Number.isFinite(tExit)) {
+          o = {
+            x: o.x + dir.x * (tExit + 1e-3),
+            y: o.y + dir.y * (tExit + 1e-3),
+            z: o.z + dir.z * (tExit + 1e-3),
+          }
+          continue
+        }
+      }
+    }
+    final = hit
+    break
+  }
+  return { hit: final, damageScale: layers > 0 ? scale : 1, penetrated: layers > 0, entry, layers }
+}
+
 /**
  * 射线 vs 盒子集合，返回最近命中。
  * boxes: 每个 box 带标识 id 与可选 part。

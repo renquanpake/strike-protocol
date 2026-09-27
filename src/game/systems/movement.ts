@@ -53,6 +53,12 @@ export function updatePlayerMovement(
   if (aiming) wishSpeed *= CONFIG.adsSpeedScale
   // 武器移速系数（CS 2018 起全枪 1.0，字段保留给武器表驱动）
   if (activeW) wishSpeed *= WEAPONS[activeW.defId].moveSpeedScale
+  // G3 受击减速（tagging）：残余受击 tag 按比例临时降移速（线性衰减恢复，护甲已降低 tag 强度）
+  if (state.tick < p.tagUntilTick && p.tagFromTick > 0) {
+    const total = Math.max(1, p.tagUntilTick - p.tagFromTick)
+    const frac = (p.tagUntilTick - state.tick) / total
+    wishSpeed *= 1 - p.tagStrength * frac
+  }
 
   // 期望方向（相对视角）
   const fx = -Math.sin(p.yaw)

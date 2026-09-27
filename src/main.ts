@@ -142,9 +142,10 @@ events.on('shot', (e) => {
 })
 events.on('surfaceHit', (e) => {
   if (e.shooterId !== 0) return
-  const pool = e.pellets > 1 ? shotPool : bulletPool
-  renderer.spawnDecal(pool, e.point, e.normal, e.pellets > 1 ? 2.4 : 1)
-  if (e.pellets === 1) {
+  // G1 穿墙命中：入口点投射烟尘 decal（shot 池），非穿墙用弹孔 decal
+  const pool = e.pellets > 1 ? shotPool : e.penetrated ? shotPool : bulletPool
+  renderer.spawnDecal(pool, e.point, e.normal, e.pellets > 1 ? 2.4 : e.penetrated ? 1.8 : 1)
+  if (e.pellets === 1 && !e.penetrated) {
     const def = WEAPONS[e.weaponId] ?? { auto: false }
     if (tracerWanted(shotSeq[e.weaponId] ?? 1, def)) spawnTracer(e.point)
   }
@@ -240,7 +241,7 @@ events.on('shot', (e) => {
   if (!p) return
   const isLocal = e.shooterId === 0
   const eyeY = p.position.y + CONFIG.eyeHeight
-  audio.shot(e.weaponId, p.position.x, eyeY, p.position.z, isLocal)
+  audio.shot(e.weaponId, p.position.x, eyeY, p.position.z, isLocal, e.muffled ?? false)
   if (isLocal && viewmodel) {
     viewmodel.setKick(4)
     // 枪口位置：优先用武器模型枪口（随摆动/后坐），首次开火前回退到眼位前 24u
