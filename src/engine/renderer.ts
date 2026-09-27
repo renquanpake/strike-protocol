@@ -566,12 +566,13 @@ export class GameRenderer {
     return g
   }
 
-  updateViewmodelGroup(id: string, x: number, y: number, z: number, rotY: number, visible: boolean): void {
+  /** V1：组支持 rotX（换弹下探/切枪入场俯仰），rotX 缺省 0 保持旧行为 */
+  updateViewmodelGroup(id: string, x: number, y: number, z: number, rotY: number, visible: boolean, rotX = 0): void {
     const g = this.vmGroups.get(id)
     if (!g) return
     g.visible = visible
     g.position.set(x, y, z)
-    g.rotation.set(0, rotY, 0)
+    g.rotation.set(rotX, rotY, 0)
   }
 
   /**
@@ -579,9 +580,15 @@ export class GameRenderer {
    * 朝向：Blender -Y 前向经 glTF 导出为 +Z，viewmodel 组自带 yaw+PI 旋转，
    * 恰好把 +Z 转回世界前向，wrap 无需再转。
    * zShift：沿枪轴平移比例（负值前移），使握把落在组原点、枪托贴近相机、枪管远伸（CS 式布局）。
+   * tex：可选 PBR 贴图覆盖（baseColor/normal/roughness，V1 m4.glb 补贴图管线）。
    * 场景无环境贴图，金属度会让 PBR 材质发黑——加载时压低金属度并提亮反照率（共享材质只处理一次）。
    */
-  async loadViewModelGLB(url: string, targetLen: number, zShift = 0.12): Promise<THREE.Object3D> {
+  async loadViewModelGLB(
+    url: string,
+    targetLen: number,
+    zShift = 0.12,
+    tex?: { map?: THREE.Texture; normal?: THREE.Texture; roughness?: THREE.Texture },
+  ): Promise<THREE.Object3D> {
     const gltf = await new GLTFLoader().loadAsync(url)
     const root = gltf.scene
     const box = new THREE.Box3().setFromObject(root)
@@ -601,10 +608,32 @@ export class GameRenderer {
         // 无环境贴图的场景里金属度材质会发黑：归零金属度，暗反照率按亮度归一（上限 4 倍，保留材质对比）
         std.metalness = 0
         std.roughness = Math.max(std.roughness ?? 0.5, 0.55)
+        // V1 PBR 贴图覆盖（无缝平铺，UV 任意均可用）
+        if (tex?.map) {
+          const t = tex.map.clone()
+          t.needsUpdate = true
+          t.wrapS = t.wrapT = THREE.RepeatWrapping
+          std.map = t
+        }
+        if (tex?.normal) {
+          const nt = tex.normal.clone()
+          nt.needsUpdate = true
+          nt.colorSpace = THREE.NoColorSpace
+          nt.wrapS = nt.wrapT = THREE.RepeatWrapping
+          std.normalMap = nt
+          std.normalScale = new THREE.Vector2(0.7, 0.7)
+        }
+        if (tex?.roughness) {
+          const rt = tex.roughness.clone()
+          rt.needsUpdate = true
+          rt.colorSpace = THREE.NoColorSpace
+          rt.wrapS = rt.wrapT = THREE.RepeatWrapping
+          std.roughnessMap = rt
+        }
         if (std.color) {
           const c = std.color
           const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-          if (lum < 0.45) c.multiplyScalar(Math.min(4, 0.45 / Math.max(lum, 0.02)))
+          if (lum < 0.45 && !tex?.map) c.multiplyScalar(Math.min(4, 0.45 / Math.max(lum, 0.02)))
           c.convertLinearToSRGB()
         }
       }

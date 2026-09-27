@@ -902,7 +902,14 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
   }
   viewmodel = new ViewModel(renderer, textures)
   // Blender 高模替换（按枪类逐个接入；失败保留程序化模型）
-  void viewmodel.upgradeWithGLB('rifle', '/models/m4.glb', 38, -0.28)
+  // V1：m4.glb 灰模补 PBR 贴图（imggen 生成 baseColor/normal/roughness）
+  void viewmodel.upgradeWithGLB(
+    'rifle',
+    '/models/m4.glb',
+    38,
+    -0.28,
+    { map: textures.m4_basecolor, normal: textures.m4_normal, roughness: textures.m4_roughness },
+  )
   glassBoxes = new Map()
   for (const b of level.brushes) {
     if (b.clip) continue

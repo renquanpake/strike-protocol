@@ -82,5 +82,25 @@
   {
     "file": "decal_shot",
     "prompt": "Flat graphic on a pure solid white background, absolutely nothing else, no gradient, no vignette, no shading, no 3d, no perspective. Subject: a shotgun pellet impact cluster, many small dark charcoal #202020 round holes scattered in a dense irregular blob in the center, small, centered. Strict constraints: pure white background #ffffff with zero texture, the marks are flat dark 2d, centered, no objects, no shadows on the background."
+  },
+  {
+    "file": "gun_steel",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular highlight, no shadows. Subject: medium-gray brushed military gunmetal steel firearm receiver and rail, cool blue-gray #8a9099 base, fine horizontal brush lines, light edge wear, subtle darker panel seams, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, neutral bright color, high detail 4k texture."
+  },
+  {
+    "file": "gun_sleeve",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: dark olive-drab military uniform fabric sleeve, muted dark green #3a4030 with subtle darker green camo weave, coarse fabric texture, light wear, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "m4_basecolor",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: M4A4 assault rifle furniture albedo, desert tan polymer #c2a878 handguard and dark charcoal #2a2d33 receiver, fine panel seams, light wear, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "m4_normal",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: M4A4 rifle furniture, polymer handguard with thin panel seams, light machined edges. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "m4_roughness",
+    "prompt": "Seamless tileable PBR roughness map only, grayscale, flat diffuse, no specular. Subject: M4A4 rifle, matte polymer handguard high roughness #b0b0b0, slightly smoother metal receiver #808080, light variation. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, grayscale only, no color, no objects, no perspective, no vignette, high detail 4k texture."
   }
 ]

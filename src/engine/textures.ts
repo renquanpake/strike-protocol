@@ -241,8 +241,10 @@ function loadOrFallback(url: string, fallback: () => THREE.Texture): Promise<THR
 export async function loadImageTextures(map: TextureMap, onStep?: (done: number, total: number) => void): Promise<void> {
   const albedoKeys = [
     'concrete', 'wood', 'sand', 'metal',
-    'gun_metal', 'gun_wood', 'bot_ct', 'bot_t',
+    'gun_metal', 'gun_wood', 'gun_steel', 'gun_sleeve',
+    'bot_ct', 'bot_t',
     'stone', 'roof', 'sandbag', 'rusted',
+    'm4_basecolor', 'm4_roughness',
   ] as const
   const albedoFallback: Record<(typeof albedoKeys)[number], () => THREE.Texture> = {
     concrete: concreteTexture,
@@ -251,12 +253,16 @@ export async function loadImageTextures(map: TextureMap, onStep?: (done: number,
     metal: metalTexture,
     gun_metal: () => metalTexture(),
     gun_wood: () => woodTexture(),
+    gun_steel: () => metalTexture(),
+    gun_sleeve: () => sandTexture(),
     bot_ct: () => metalTexture(),
     bot_t: () => sandTexture(),
     stone: stoneTexture,
     roof: roofTexture,
     sandbag: sandbagTexture,
     rusted: rustedTexture,
+    m4_basecolor: () => woodTexture(),
+    m4_roughness: () => metalTexture(),
   }
   const jobs: Array<Promise<THREE.Texture>> = albedoKeys.map((k) => loadOrFallback(`/textures/${k}.png`, albedoFallback[k]))
   // 法线贴图（仅表面材质，缺失回退无操作）
@@ -280,6 +286,25 @@ export async function loadImageTextures(map: TextureMap, onStep?: (done: number,
         return t as unknown as THREE.Texture
       }),
     ),
+  )
+  // M4 GLB 专属法线（文件名不遵循 {key}_n 约定）
+  jobs.push(
+    new Promise<THREE.Texture | null>((resolve) => {
+      new THREE.TextureLoader().load(
+        '/textures/m4_normal.png',
+        (tex) => {
+          tex.colorSpace = THREE.NoColorSpace
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+          tex.anisotropy = 4
+          resolve(tex)
+        },
+        undefined,
+        () => resolve(null),
+      )
+    }).then((t) => {
+      if (t) map['m4_normal'] = t
+      return t as unknown as THREE.Texture
+    }),
   )
   const settled = await Promise.all(
     jobs.map((j, i) =>

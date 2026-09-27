@@ -27,9 +27,33 @@ function cloneTex(t: THREE.Texture | undefined): THREE.Texture {
   return c
 }
 
+/** 各枪类枪口在组局部 z 的方向偏移（muzzle 对齐火光/抛壳，V1） */
+const MUZZLE_Z: Record<string, number> = {
+  rifle: 30,
+  lmg: 30,
+  rifle_ak: 32,
+  smg: 24,
+  sniper: 34,
+  shotgun: 28,
+  pistol: 16,
+  knife: 18,
+}
+/** 各枪类枪口相对枪身中心的横向/纵向修正（贴合真实枪口，V1） */
+const MUZZLE_OFF: Record<string, { x: number; y: number }> = {
+  rifle: { x: 0, y: 0.5 },
+  lmg: { x: 0, y: 0.5 },
+  rifle_ak: { x: 0, y: 0.5 },
+  smg: { x: 0, y: 0.3 },
+  sniper: { x: 0, y: 0.6 },
+  shotgun: { x: 0, y: 0.6 },
+  pistol: { x: 0, y: 0.2 },
+  knife: { x: 0, y: 0 },
+}
+
 /**
- * 第一人称武器模型：按枪类用多部件几何（枪管/机匣/弹匣/握把/枪托/瞄具/枪身贴图）拼装，
- * 屏幕右下，行走摆动 + 开火后坐 + 切枪隐藏。
+ * 第一人称武器模型（V1）：按枪类多部件几何 + PBR 贴图（gun_steel/gun_wood 提亮，非黑盒），
+ * 持枪手臂（gun_sleeve 袖套，握枪姿态），行走摆动 + 开火后坐 + 换弹下探 + 切枪入场，
+ * 枪口火光/抛壳按各枪类 muzzle 点发射。
  * 局部坐标系：-Z 为枪口方向，+Y 为上，+X 为右。
  */
 export class ViewModel {
@@ -37,14 +61,16 @@ export class ViewModel {
   private kick = 0
   private hideUntil = 0
   private lastDefId: string | null = null
+  private switchStartTick = 0
   private muzzle: Vec3 = v3(0, -9999, 0)
 
   constructor(private renderer: GameRenderer, textures: TextureMap) {
-    // PBR 材质（IBL 环境下金属件有真实高光，对标 CS 枪身质感）
-    const metal = () => new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_metal), roughness: 0.55, metalness: 0.7 })
-    const wood = () => new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_wood), roughness: 0.8, metalness: 0 })
+    // PBR 材质（IBL 环境下金属件有真实高光，对标 CS 枪身质感；V1 用提亮的 gun_steel，避免纯黑）
+    const metal = () =>
+      new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_steel ?? textures.gun_metal), roughness: 0.45, metalness: 0.45 })
+    const wood = () => new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_wood), roughness: 0.7, metalness: 0 })
     const steel = () =>
-      new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_metal), color: 0x555a61, roughness: 0.35, metalness: 0.9 })
+      new THREE.MeshStandardMaterial({ map: cloneTex(textures.gun_steel ?? textures.gun_metal), color: 0xb8bec8, roughness: 0.35, metalness: 0.6 })
     const blade = () => new THREE.MeshStandardMaterial({ color: 0xaab4c0, roughness: 0.25, metalness: 0.9 })
 
     // 各枪类部件组（注册进渲染器，按 id 驱动）
@@ -58,20 +84,46 @@ export class ViewModel {
     this.buildKnife(wood, blade)
     this.renderer.addDynamicSphere('vm_grenade2', 5, 0x4a5d3a)
     // 持枪手臂（第一人称前臂 + 手，握在枪柄/护木处）
-    this.buildArms(wood)
+    this.buildArms(textures)
   }
 
-  private buildArms(wood: () => THREE.Material): THREE.Group {
+  /** V1 手臂：圆润前臂（胶囊）+ 手（椭球），枪套面料贴图，握枪姿态 */
+  private buildArms(textures: TextureMap): THREE.Group {
     const g = this.renderer.addViewmodelGroup('vm_arms')
-    const cloth = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.9, metalness: 0 })
-    void wood
+    const sleeve = new THREE.MeshStandardMaterial({
+      map: cloneTex(textures.gun_sleeve ?? textures.gun_metal),
+      roughness: 0.85,
+      metalness: 0,
+    })
+    const skin = new THREE.MeshStandardMaterial({ color: 0xb98a63, roughness: 0.7, metalness: 0 })
+    const addLimb = (
+      geo: THREE.BufferGeometry,
+      mat: THREE.Material,
+      x: number,
+      y: number,
+      z: number,
+      rx = 0,
+      ry = 0,
+      rz = 0,
+    ): void => {
+      const m = new THREE.Mesh(geo, mat)
+      m.position.set(x, y, z)
+      m.rotation.set(rx, ry, rz)
+      m.castShadow = false
+      g.add(m)
+    }
     // 约定：右手在组局部 z≈0（握把处），前臂向后（朝相机）延伸；组锚点由 update() 按 armAnchorZ 定位
-    // 右前臂（握扳机）：从握把伸向右下
-    this.part(g, new THREE.BoxGeometry(4, 4, 12), cloth, 4.5, -5, -6, -0.5, 0, 0.15)
-    this.part(g, new THREE.BoxGeometry(3.5, 3.5, 4), cloth, 1.8, -3, 0) // 右手
+    // 右前臂（握扳机）：胶囊从握把伸向右下
+    const rFore = new THREE.CapsuleGeometry(2.1, 9, 4, 8)
+    rFore.rotateX(Math.PI / 2)
+    addLimb(rFore, sleeve, 4.6, -5, -5, -0.5, 0, 0.18)
+    addLimb(new THREE.SphereGeometry(2.6, 8, 6), skin, 2.2, -2.6, 0.6, 0, 0, 0) // 右手
+    addLimb(new THREE.BoxGeometry(3.2, 3.4, 4.2), skin, 1.6, -2.4, 3.4) // 手掌（握持）
     // 左前臂（托护木）
-    this.part(g, new THREE.BoxGeometry(4, 4, 10), cloth, -4.5, -3.5, 7, -0.4, 0, -0.15)
-    this.part(g, new THREE.BoxGeometry(3.5, 3.5, 4), cloth, -3, 0.5, 15) // 左手
+    const lFore = new THREE.CapsuleGeometry(2.0, 8, 4, 8)
+    lFore.rotateX(Math.PI / 2)
+    addLimb(lFore, sleeve, -4.6, -3.4, 6.5, -0.42, 0, -0.15)
+    addLimb(new THREE.SphereGeometry(2.5, 8, 6), skin, -3.2, -0.6, 14.5, 0, 0, 0) // 左手
     return g
   }
 
@@ -106,7 +158,7 @@ export class ViewModel {
       this.part(g, new THREE.BoxGeometry(3, 7, 4), metal(), 0, -4.5, 9, 0.22)
       this.part(g, new THREE.BoxGeometry(3, 5, 4), metal(), 0, -8.5, 10.5, 0.45)
     } else {
-      this.part(g, new THREE.BoxGeometry(3.5, 4, 6), metal(), 0, -1, -4) // 护木
+      this.part(g, new THREE.BoxGeometry(3.5, 4, 6), wood(), 0, -1, -4) // 护木
       this.part(g, new THREE.BoxGeometry(3, 9, 4), metal(), 0, -5, 9, 0.18) // 直弹匣
     }
     this.part(g, new THREE.BoxGeometry(3, 6, 3), wood(), -1, -5, 18, -0.35) // 握把
@@ -176,12 +228,20 @@ export class ViewModel {
     this.kick = ticks
   }
 
-  /** 用 GLB 高模替换某枪类的程序化部件（失败返回 false，保留程序化模型） */
-  async upgradeWithGLB(cat: WeaponCategory, url: string, targetLen: number, zShift = -0.22): Promise<boolean> {
+  /** 用 GLB 高模替换某枪类的程序化部件（失败返回 false，保留程序化模型）；
+   *  V1：可选 PBR 贴图覆盖（baseColor/normal/roughness，m4.glb 灰模补贴图） */
+  async upgradeWithGLB(
+    cat: WeaponCategory,
+    url: string,
+    targetLen: number,
+    zShift = -0.22,
+    tex?: { map?: THREE.Texture; normal?: THREE.Texture; roughness?: THREE.Texture },
+  ): Promise<boolean> {
     try {
-      const model = await this.renderer.loadViewModelGLB(url, targetLen, zShift)
+      const model = await this.renderer.loadViewModelGLB(url, targetLen, zShift, tex)
       this.renderer.setViewmodelModel(`vm_${cat}`, model)
       this.glbCats.add(cat)
+      this.glbLen.set(cat, targetLen)
       return true
     } catch {
       return false
@@ -197,6 +257,8 @@ export class ViewModel {
   }
 
   private glbCats = new Set<string>()
+  /** V1：GLB 枪类目标长度（muzzle 对齐用） */
+  private glbLen = new Map<string, number>()
 
   /** 各枪类握把在组局部 z 的位置（手臂锚点跟随；GLB 枪握把在原点附近） */
   private armAnchorZ(cat: WeaponCategory): number {
@@ -218,6 +280,13 @@ export class ViewModel {
     }
   }
 
+  /** V1：当前枪类的 muzzle 局部 z（GLB 用目标长度近似，程序化查 MUZZLE_Z 表） */
+  private muzzleZFor(cat: WeaponCategory, grpKey: string): number {
+    if (this.glbCats.has(cat)) {
+      return Math.max(18, (this.glbLen.get(cat) ?? 30) * 0.46)
+    }
+    return MUZZLE_Z[grpKey] ?? 26
+  }
   hide(): void {
     for (const key of ['rifle', 'rifle_ak', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
       this.renderer.updateViewmodelGroup(`vm_${key}`, 0, -9999, 0, 0, false)
@@ -232,6 +301,7 @@ export class ViewModel {
     const defId = w?.defId ?? 'knife'
     if (this.lastDefId !== defId) {
       this.hideUntil = tick + 8
+      this.switchStartTick = tick
       this.lastDefId = defId
     }
     const cat = (WEAPONS[defId]?.category ?? 'knife') as WeaponCategory
@@ -252,11 +322,35 @@ export class ViewModel {
     if (this.kick > 0) this.kick -= 1
     const kickOff = 8 * (this.kick / 4)
 
+    // V1 切枪入场动画：前 8 tick 自下方升起（y -26→0，俯仰 -0.5→0，缓出）
+    let switchDipY = 0
+    let switchRotX = 0
+    const sinceSwitch = tick - this.switchStartTick
+    if (sinceSwitch >= 0 && sinceSwitch < 8) {
+      const t = sinceSwitch / 8
+      const e = 1 - (1 - t) * (1 - t) // easeOut
+      switchDipY = -26 * (1 - e)
+      switchRotX = -0.5 * (1 - e)
+    }
+    // V1 换弹下探动画：换弹进度正弦下探（y 最低 -8，俯仰 -0.35），结束回位
+    let reloadDipY = 0
+    let reloadRotX = 0
+    if (w && w.reloadUntilTick > 0) {
+      const def = WEAPONS[w.defId]
+      const totalTicks = Math.max(1, Math.round((def.reloadMs / 1000) * CONFIG.tickRate))
+      const remain = w.reloadUntilTick - tick
+      const progress = Math.min(1, Math.max(0, 1 - remain / totalTicks))
+      const dip = Math.sin(Math.PI * progress) // 0→1→0
+      reloadDipY = -8 * dip
+      reloadRotX = -0.35 * dip
+    }
+
     // 组中心 = 锚点 + 前向偏移（随后坐后退）
     const cx = ax + fwd.x * (14 - kickOff)
-    const cy = ay + bobY
+    const cy = ay + bobY + switchDipY + reloadDipY
     const cz = az + fwd.z * (14 - kickOff)
     const rotY = pose.yaw + Math.PI
+    const rotX = switchRotX + reloadRotX
 
     // 隐藏全部枪类组与投掷物球
     for (const key of ['rifle', 'rifle_ak', 'lmg', 'smg', 'sniper', 'shotgun', 'pistol', 'knife']) {
@@ -269,12 +363,20 @@ export class ViewModel {
       this.renderer.updateDynamicSphere('vm_grenade2', cx, cy - 3, cz, !hidden)
     } else {
       const grp = defId === 'ak' ? 'vm_rifle_ak' : this.groupId(cat)
-      this.renderer.updateViewmodelGroup(grp, cx, cy, cz, rotY, !hidden)
+      this.renderer.updateViewmodelGroup(grp, cx, cy, cz, rotY, !hidden, rotX)
       // 持枪手臂：锚点沿枪轴前移到握把位置
       const a0 = this.armAnchorZ(cat)
-      this.renderer.updateViewmodelGroup('vm_arms', ax + fwd.x * a0, cy, az + fwd.z * a0, rotY, !hidden && cat !== 'knife')
+      this.renderer.updateViewmodelGroup('vm_arms', ax + fwd.x * a0, cy, az + fwd.z * a0, rotY, !hidden && cat !== 'knife', rotX * 0.6)
     }
 
-    this.muzzle = v3(cx + fwd.x * (30 - kickOff), cy, cz + fwd.z * (30 - kickOff))
+    // V1：muzzle 按各枪类枪口点（火光/抛壳对齐）
+    const muzzleKey = isGrenade ? 'knife' : defId === 'ak' ? 'rifle_ak' : cat
+    const mz = this.muzzleZFor(cat, muzzleKey)
+    const off = MUZZLE_OFF[muzzleKey] ?? { x: 0, y: 0.4 }
+    this.muzzle = v3(
+      cx + fwd.x * (mz - kickOff) + right.x * off.x,
+      cy + off.y - kickOff * 0.3,
+      cz + fwd.z * (mz - kickOff),
+    )
   }
 }
