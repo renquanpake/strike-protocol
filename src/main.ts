@@ -105,9 +105,12 @@ let matchendShown = false
 
 // 渲染器（#43：init 内延迟构造，失败显示兜底页）
 let renderer: GameRenderer
+function mapPalette(name: string) {
+  return CONFIG.SKY_PALETTES[name] ?? CONFIG.SKY_PALETTES['de_sahara']
+}
 function makeRenderer(): GameRenderer {
   const r = new GameRenderer(canvas, settings.fov)
-  r.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600, settings.quality === 'high' ? 4096 : 2048)
+  r.configure(mapPalette(level.name), 2600, settings.quality === 'high' ? 4096 : 2048)
   return r
 }
 
@@ -831,7 +834,13 @@ function syncAudioScene(): void {
   }
 }
 
-/** 应用设置（#3/#7/#9/#38/#42）：音量/FOV/画质/灵敏度/准星/小地图/语言/色盲 */
+/** V5：debug 面板显隐（?debug=1 强制开，否则看设置 showDebug，默认关） */
+const DEBUG_FORCED = new URLSearchParams(location.search).has('debug')
+function applyDebugFlag(showDebug: boolean): void {
+  document.body.classList.toggle('debug-on', DEBUG_FORCED || showDebug)
+}
+
+/** 应用设置（#3/#7/#9/#38/#42 + V5 debug 面板）：音量/FOV/画质/灵敏度/准星/小地图/语言/色盲 */
 function applySettings(s: Settings): void {
   settings = s
   audio.setMasterVolume(s.volume)
@@ -845,6 +854,7 @@ function applySettings(s: Settings): void {
   setRadarTeamColors(s.teamColors)
   input.setBinds(s.binds)
   buyMenu?.applyLang()
+  applyDebugFlag(s.showDebug)
 }
 
 let menuUI: MenuUI
@@ -893,8 +903,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
 
   // 重建渲染世界
   renderer.resetWorld()
-  renderer.configure(CONFIG.skyColor, CONFIG.fogNear, CONFIG.fogFar, 2600, settings.quality === 'high' ? 4096 : 2048)
-  renderer.addSkyDome()
+  renderer.configure(mapPalette(level.name), 2600, settings.quality === 'high' ? 4096 : 2048)
   madeDyn.clear()
   for (const s of shells) {
     s.active = false

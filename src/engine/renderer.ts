@@ -4,6 +4,7 @@ import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { Vec3 } from './math'
 import type { TextureMap } from './textures'
+import type { SkyPalette } from '../game/config'
 
 /** 单帧相机姿态（由 main 完成插值后下发） */
 export interface CameraPose {
@@ -28,11 +29,11 @@ export interface TargetDef {
 
 const TARGET_PART_COLORS = [0xc0392b, 0xa93226, 0xa93226, 0x7b241c, 0x641e16]
 
-/** 人物阵营配色：保留原贴图真实质感，用柔和阵营 tint 相乘（警冷蓝 / 匪暖沙）；
+/** 人物阵营配色（V4 高对比）：身体用高饱和阵营色 tint 相乘、头部压暗强反差；
  *  强识别交给地面阵营光环 + 雷达点色 + 自发光 glow。键 = 阵营 accent */
 const CHAR_TINTS: Record<number, { body: number; head: number; glow: number }> = {
-  0xc8862a: { body: 0xe8d5b0, head: 0x8a7256, glow: 0xff7a1a }, // T 匪：暖沙色服 + 深褐头巾
-  0x3f6fae: { body: 0xbcd0e8, head: 0x4a5a78, glow: 0x2f6fd8 }, // CT 警：冷蓝警服 + 深蓝警盔
+  0xc8862a: { body: 0xf0a038, head: 0x3a2a18, glow: 0xff7a1a }, // T 匪：高饱和橙砂服 + 深褐头巾
+  0x3f6fae: { body: 0x5aa0ff, head: 0x16283f, glow: 0x2f6fd8 }, // CT 警：高饱和冷蓝警服 + 深蓝警盔
 }
 
 export class GameRenderer {
@@ -188,51 +189,97 @@ export class GameRenderer {
     attr.needsUpdate = true
   }
 
-  /** #33 天空盒：渐变天穹（不受雾）+ 太阳斑 + 外围沙丘剪影（沙漠氛围） */
-  addSkyDome(): void {
-    const geo = new THREE.SphereGeometry(9000, 24, 12)
+  /** #33/V3 天空盒：三段渐变 + 程序云层(FBM) + 太阳光晕 + 远景剪影（色板由地图调色板驱动，V6） */
+  addSkyDome(pal?: { top: number; mid: number; horizon: number; sun: number; far: number }): void {
+    const p = pal ?? { top: 0x3a6ea8, mid: 0x8fb8d8, horizon: 0xe8cfa0, sun: 0xfff1cf, far: 0xb09a72 }
+    const geo = new THREE.SphereGeometry(9000, 32, 16)
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       fog: false,
       depthWrite: false,
-      uniforms: {
-        top: { value: new THREE.Color(0x3a6ea8) },
-        horizon: { value: new THREE.Color(0xe8cfa0) },
-      },
-      vertexShader: `
-        varying vec3 vPos;
-        void main() { vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-      `,
-      fragmentShader: `
-        uniform vec3 top; uniform vec3 horizon; varying vec3 vPos;
-        void main() {
-          float h = clamp(normalize(vPos).y * 1.6, 0.0, 1.0);
-          gl_FragColor = vec4(mix(horizon, top, h), 1.0);
-        }
-      `,
+        uniforms: {
+          top: { value: new THREE.Color(p.top) },
+          mid: { value: new THREE.Color(p.mid) },
+          horizon: { value: new THREE.Color(p.horizon) },
+          sunDir: { value: new THREE.Vector3(0.55, 0.32, 0.35).normalize() },
+          sunColor: { value: new THREE.Color(p.sun) },
+        },
+        vertexShader: `
+          varying vec3 vPos;
+          void main() { vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+        `,
+        fragmentShader: `
+          uniform vec3 top; uniform vec3 mid; uniform vec3 horizon;
+          uniform vec3 sunDir; uniform vec3 sunColor;
+          varying vec3 vPos;
+          // 3D value noise（确定性，8 角点三线性插值 → FBM 云层）
+          vec3 hash3(vec3 p) {
+            p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
+            return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+          }
+          float vnoise(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            float n000 = dot(hash3(i + vec3(0.0, 0.0, 0.0)), f - vec3(0.0, 0.0, 0.0));
+            float n100 = dot(hash3(i + vec3(1.0, 0.0, 0.0)), f - vec3(1.0, 0.0, 0.0));
+            float n010 = dot(hash3(i + vec3(0.0, 1.0, 0.0)), f - vec3(0.0, 1.0, 0.0));
+            float n110 = dot(hash3(i + vec3(1.0, 1.0, 0.0)), f - vec3(1.0, 1.0, 0.0));
+            float n001 = dot(hash3(i + vec3(0.0, 0.0, 1.0)), f - vec3(0.0, 0.0, 1.0));
+            float n101 = dot(hash3(i + vec3(1.0, 0.0, 1.0)), f - vec3(1.0, 0.0, 1.0));
+            float n011 = dot(hash3(i + vec3(0.0, 1.0, 1.0)), f - vec3(0.0, 1.0, 1.0));
+            float n111 = dot(hash3(i + vec3(1.0, 1.0, 1.0)), f - vec3(1.0, 1.0, 1.0));
+            float a = mix(n000, n100, f.x);
+            float b = mix(n010, n110, f.x);
+            float c = mix(n001, n101, f.x);
+            float d = mix(n011, n111, f.x);
+            return mix(mix(a, b, f.y), mix(c, d, f.y), f.z) * 0.5 + 0.5;
+          }
+          float fbm(vec3 p) {
+            float v = 0.0; float amp = 0.5;
+            for (int i = 0; i < 4; i++) { v += vnoise(p) * amp; p = p * 2.1 + vec3(7.3); amp *= 0.5; }
+            return v;
+          }
+          void main() {
+            vec3 d = normalize(vPos);
+            float h = clamp(d.y * 1.6, 0.0, 1.0);
+            vec3 col = mix(horizon, mix(mid, top, smoothstep(0.12, 0.62, h)), smoothstep(0.0, 0.38, h));
+            // 太阳光晕 + 日轮
+            float sd = max(dot(d, normalize(sunDir)), 0.0);
+            col += sunColor * (pow(sd, 48.0) * 0.35 + pow(sd, 6.0) * 0.10);
+            col += sunColor * smoothstep(0.9994, 0.9998, sd) * 2.2;
+            // 程序云层：水平方向 FBM（仅上半球，地平线处淡出）
+            float cl = fbm(vec3(d.xz * 3.2 + 11.0, d.y * 5.5 + 4.0));
+            cl = smoothstep(0.42, 0.78, cl) * smoothstep(0.02, 0.22, d.y);
+            col = mix(col, mix(horizon, vec3(0.98, 0.97, 0.94), 0.6), cl * 0.55);
+            // 太阳边缘泛云
+            col += sunColor * pow(sd, 900.0) * (1.0 - cl) * 0.8;
+            gl_FragColor = vec4(col, 1.0);
+          }
+        `,
     })
     const dome = new THREE.Mesh(geo, mat)
     dome.renderOrder = -1
     this.scene.add(dome)
-    // 太阳亮斑（sprite billboard）
-    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xfff2cc, fog: false }))
-    sun.position.set(4200, 4600, 2400)
+    // 太阳亮斑（sprite billboard，与 shader 光晕叠加）
+    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ color: p.sun, fog: false }))
+    sun.position.set(4200, 2600, 3000)
     sun.scale.set(900, 900, 1)
     this.scene.add(sun)
-    // 外围沙丘剪影（外墙之外的远景色，不受雾）
-    const duneMat = new THREE.MeshBasicMaterial({ color: 0xb09a72, fog: false, transparent: true, opacity: 0.55 })
-    const duneGeo = new THREE.BoxGeometry(1, 1, 1)
-    const dunes: [number, number, number, number, number, number][] = [
+    // 外围远景剪影（外墙之外的远景色，不受雾；色板 far 色区分地图基调）
+    const farMat = new THREE.MeshBasicMaterial({ color: p.far, fog: false, transparent: true, opacity: 0.55 })
+    const farGeo = new THREE.BoxGeometry(1, 1, 1)
+    const fars: [number, number, number, number, number, number][] = [
       [0, 60, 5400, 4600, 260, 600],
       [0, 90, -5400, 4600, 340, 600],
       [5400, 70, 0, 600, 280, 4400],
       [-5400, 50, 0, 600, 220, 4400],
     ]
-    for (const [cx, cy, cz, w, h, d] of dunes) {
-      const m = new THREE.Mesh(duneGeo, duneMat)
+    for (const [cx, cy, cz, w, h, d] of fars) {
+      const m = new THREE.Mesh(farGeo, farMat)
       m.scale.set(w, h, d)
       m.position.set(cx, cy, cz)
-      m.rotation.y = Math.random() * 0.4
+      m.rotation.y = 0.1
       this.scene.add(m)
     }
   }
@@ -289,12 +336,20 @@ export class GameRenderer {
     }
   }
 
-  configure(sky: number, fogNear: number, fogFar: number, shadowExtent = 900, shadowMapSize = 2048): void {
-    this.scene.background = new THREE.Color(sky)
-    this.scene.fog = new THREE.Fog(sky, fogNear, fogFar)
-    const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x7a705c, 0.55)
-    const sun = new THREE.DirectionalLight(0xfff1cf, 2.1)
-    sun.position.set(800, 1200, 500)
+  /** V3+V6：按地图色板配置背景/雾/太阳（低角度长影、强直射压环境光）/天空穹 */
+  configure(pal: SkyPalette, shadowExtent: number, shadowMapSize: number): void {
+    this.scene.background = new THREE.Color(pal.sky)
+    this.scene.fog = new THREE.Fog(pal.sky, pal.fogNear, pal.fogFar)
+    const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x7a705c, pal.hemiIntensity)
+    const sun = new THREE.DirectionalLight(pal.sun, pal.sunIntensity)
+    const alt = (pal.sunAltitudeDeg * Math.PI) / 180
+    const azi = (pal.sunAzimuthDeg * Math.PI) / 180
+    const dist = 2600
+    sun.position.set(
+      Math.cos(alt) * Math.sin(azi) * dist,
+      Math.sin(alt) * dist,
+      Math.cos(alt) * Math.cos(azi) * dist,
+    )
     sun.castShadow = true
     sun.shadow.mapSize.set(shadowMapSize, shadowMapSize)
     const sc = sun.shadow.camera
@@ -307,6 +362,7 @@ export class GameRenderer {
     sun.shadow.bias = -0.0004
     this.scene.add(hemi, sun)
     this.sunLight = sun
+    this.addSkyDome({ top: pal.top, mid: pal.mid, horizon: pal.horizon, sun: pal.sun, far: pal.far })
   }
 
   addGroundGrid(size: number, divisions: number, y: number): void {
@@ -721,7 +777,7 @@ export class GameRenderer {
     const grp = new THREE.Group()
     this.discGeo ??= new THREE.CircleGeometry(24, 36)
     this.ringGeo ??= new THREE.RingGeometry(20, 24, 36)
-    const disc = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }))
+    const disc = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }))
     const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }))
     for (const m of [disc, ring]) {
       m.rotation.x = -Math.PI / 2
@@ -838,7 +894,7 @@ export class GameRenderer {
             const c = m.clone() as THREE.MeshStandardMaterial
             // 保留原贴图（真实质感），柔和阵营 tint 相乘；强识别交给地面光环/雷达/自发光
             c.color.copy(bodyColor)
-            c.emissive = glowColor.clone().multiplyScalar(0.25) // 阵营色自发光（PBR 下收敛，防过曝）
+            c.emissive = glowColor.clone().multiplyScalar(0.45) // V4 阵营色自发光增强（PBR 收敛值）
             dst = c
           }
           swapRef.set(m, dst)
@@ -952,9 +1008,9 @@ export class GameRenderer {
     const anim = this.charAnims.get(id)
     const nowMs = performance.now()
 
-    // 阵营光环：平贴地面跟随 x/z（不随倒地/转向倾斜），存活才显示
+    // 阵营光环：平贴脚下跟随 x/z/y（不随倒地/转向倾斜），存活才显示
     if (h.teamRing) {
-      h.teamRing.position.set(x, 0.6, z)
+      h.teamRing.position.set(x, Math.max(y, 0) + 0.6, z)
       h.teamRing.visible = alive
     }
     // 烟雾剪影壳：存活且处于烟雾区时罩住人物

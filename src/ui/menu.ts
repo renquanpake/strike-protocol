@@ -14,6 +14,7 @@ import type { GameState } from '../game/state'
 const MAP_CARD: Record<string, { bg: string; tag: string }> = {
   de_sahara: { bg: 'linear-gradient(135deg,#c9a86a,#8a5a30)', tag: '沙漠' },
   de_plaza: { bg: 'linear-gradient(135deg,#dfe6ea,#7d8a97)', tag: '地中海' },
+  de_costa: { bg: 'linear-gradient(135deg,#9fc4dd,#4a7a9e)', tag: '海滨' },
   training: { bg: 'linear-gradient(135deg,#4a5d3a,#2c3a24)', tag: '训练场' },
 }
 const MODE_CARD: Record<string, { bg: string; tag: string }> = {

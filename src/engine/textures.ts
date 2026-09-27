@@ -165,6 +165,62 @@ export function roofTexture(): THREE.Texture {
   return tex
 }
 
+/** V6 地中海白灰泥墙（de_plaza 主色板） */
+export function plasterTexture(): THREE.Texture {
+  const [c, ctx] = makeCanvas()
+  ctx.fillStyle = '#ece5d8'
+  ctx.fillRect(0, 0, 256, 256)
+  // 石灰灰泥：细微竖流痕 + 旧化斑块
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * 256
+    ctx.strokeStyle = `rgba(180,170,150,${0.05 + Math.random() * 0.08})`
+    ctx.lineWidth = 2 + Math.random() * 6
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x + (Math.random() - 0.5) * 30, 256)
+    ctx.stroke()
+  }
+  for (let i = 0; i < 12; i++) {
+    ctx.fillStyle = `rgba(200,190,170,${0.1 + Math.random() * 0.1})`
+    ctx.beginPath()
+    ctx.ellipse(Math.random() * 256, Math.random() * 256, 12 + Math.random() * 30, 8 + Math.random() * 20, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  noiseFill(ctx, 256, '#ece5d8', 1200, 0.06)
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  return tex
+}
+
+/** V6 灰瓷砖广场地面（de_plaza 主色板） */
+export function tileTexture(): THREE.Texture {
+  const [c, ctx] = makeCanvas()
+  ctx.fillStyle = '#cfc8bc'
+  ctx.fillRect(0, 0, 256, 256)
+  // 2x2 瓷砖 + 灰缝
+  const ts = 128
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
+      ctx.fillStyle = i % 2 ? '#d4cec2' : '#cbc4b8'
+      ctx.fillRect(i * ts + 3, j * ts + 3, ts - 6, ts - 6)
+    }
+  }
+  ctx.strokeStyle = 'rgba(120,115,105,0.8)'
+  ctx.lineWidth = 4
+  for (let k = 0; k <= 2; k++) {
+    ctx.beginPath()
+    ctx.moveTo(k * ts, 0)
+    ctx.lineTo(k * ts, 256)
+    ctx.moveTo(0, k * ts)
+    ctx.lineTo(256, k * ts)
+    ctx.stroke()
+  }
+  noiseFill(ctx, 256, '#cfc8bc', 1500, 0.08)
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  return tex
+}
+
 export function sandbagTexture(): THREE.Texture {
   const [c, ctx] = makeCanvas()
   ctx.fillStyle = '#b09a6a'
@@ -216,6 +272,8 @@ export function buildTextures(): TextureMap {
     roof: roofTexture(),
     sandbag: sandbagTexture(),
     rusted: rustedTexture(),
+    plaster: plasterTexture(),
+    tile: tileTexture(),
   }
 }
 
@@ -236,6 +294,118 @@ function loadOrFallback(url: string, fallback: () => THREE.Texture): Promise<THR
   })
 }
 
+/** V3 双层平铺：仅对大面积开放表面合成 2048² "mega-tile"（种子决定相位，确定性跨运行稳定） */
+const MEGA_SEEDS: Record<string, number> = {
+  concrete: 1,
+  stone: 2,
+  sand: 3,
+  rusted: 4,
+  plaster: 5,
+  tile: 6,
+  roof: 7,
+  sandbag: 8,
+  wood: 9,
+}
+
+function mulberry(seed: number): () => number {
+  let s = seed >>> 0
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0
+    let t = s
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function loadImageEl(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const i = new Image()
+    i.crossOrigin = 'anonymous'
+    i.onload = () => resolve(i)
+    i.onerror = () => reject(new Error(url))
+    i.src = url
+  })
+}
+
+/** V3 双层平铺合成：2048 mega-tile = 2x2 随机相位平铺 + 第二层 AO 灰度 detail（multiply），
+ *  并沿 mega-tile 边界加晕影带，打破 1024 源图重复平铺的规律感。源图缺失/尺寸不足时由调用方回退。 */
+async function composeMegaTexture(url: string, seed: number): Promise<THREE.Texture> {
+  const img = await loadImageEl(url)
+  const S = img.width
+  if (S < 1024) throw new Error(`source too small for mega composite: ${S}`)
+  const Q = 1024
+  // 3x3 wrap canvas：随机偏移（≤1/4 周期）无接缝采样
+  const wrap = document.createElement('canvas')
+  wrap.width = wrap.height = S * 3
+  const wctx = wrap.getContext('2d')!
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) wctx.drawImage(img, i * S, j * S)
+  const c = document.createElement('canvas')
+  c.width = c.height = Q * 2
+  const ctx = c.getContext('2d')!
+  const rnd = mulberry(seed * 1013)
+  for (let qx = 0; qx < 2; qx++) {
+    for (let qy = 0; qy < 2; qy++) {
+      const ox = Math.floor(rnd() * S * 0.25)
+      const oy = Math.floor(rnd() * S * 0.25)
+      ctx.drawImage(wrap, ox, oy, S, S, qx * Q, qy * Q, Q, Q)
+    }
+  }
+  // 第二层 AO 灰度 detail（1024 无缝，二倍平铺）：低频污渍斑块
+  const AO = 1024
+  const ao = document.createElement('canvas')
+  ao.width = ao.height = AO
+  const actx = ao.getContext('2d')!
+  actx.fillStyle = '#ffffff'
+  actx.fillRect(0, 0, AO, AO)
+  const rnd2 = mulberry(seed * 271)
+  for (let i = 0; i < 72; i++) {
+    const cx = rnd2() * AO
+    const cy = rnd2() * AO
+    const r = 40 + rnd2() * 130
+    const a = 0.05 + rnd2() * 0.09
+    const bright = rnd2() < 0.3
+    // 9 倍环绕副本保证 canvas 边缘无缝
+    for (let dx = -AO; dx <= AO; dx += AO) {
+      for (let dy = -AO; dy <= AO; dy += AO) {
+        const g = actx.createRadialGradient(cx + dx, cy + dy, 0, cx + dx, cy + dy, r)
+        const rgb = bright ? '255,255,255' : '30,28,24'
+        g.addColorStop(0, `rgba(${rgb},${a})`)
+        g.addColorStop(1, `rgba(${rgb},0)`)
+        actx.fillStyle = g
+        actx.fillRect(cx + dx - r, cy + dy - r, r * 2, r * 2)
+      }
+    }
+  }
+  ctx.globalCompositeOperation = 'multiply'
+  ctx.drawImage(ao, 0, 0)
+  ctx.drawImage(ao, AO, 0)
+  ctx.drawImage(ao, 0, AO)
+  ctx.drawImage(ao, AO, AO)
+  // mega-tile 边界晕影带（0/Q/2Q 处），打破平铺重复规律
+  const edge = 72
+  for (const pos of [0, Q, Q * 2]) {
+    const gv = ctx.createLinearGradient(pos - edge, 0, pos + edge, 0)
+    gv.addColorStop(0, 'rgba(0,0,0,0.14)')
+    gv.addColorStop(0.5, 'rgba(0,0,0,0)')
+    gv.addColorStop(1, 'rgba(0,0,0,0.14)')
+    ctx.fillStyle = gv
+    ctx.fillRect(pos - edge, 0, edge * 2, Q * 2)
+    const gh = ctx.createLinearGradient(0, pos - edge, 0, pos + edge)
+    gh.addColorStop(0, 'rgba(0,0,0,0.14)')
+    gh.addColorStop(0.5, 'rgba(0,0,0,0)')
+    gh.addColorStop(1, 'rgba(0,0,0,0.14)')
+    ctx.fillStyle = gh
+    ctx.fillRect(0, pos - edge, Q * 2, edge * 2)
+  }
+  ctx.globalCompositeOperation = 'source-over'
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.anisotropy = 4
+  return tex
+}
+
 /** 异步把生图表面贴图覆盖进 map（保留 ladder/glass 的 canvas 版），并补枪身/阵营键；onStep 报告进度。
  * PBR 升级：法线贴图以 `{key}_n` 键加载（缺失时静默跳过，不影响 albedo）。 */
 export async function loadImageTextures(map: TextureMap, onStep?: (done: number, total: number) => void): Promise<void> {
@@ -245,6 +415,7 @@ export async function loadImageTextures(map: TextureMap, onStep?: (done: number,
     'bot_ct', 'bot_t',
     'stone', 'roof', 'sandbag', 'rusted',
     'm4_basecolor', 'm4_roughness',
+    'plaster', 'tile',
   ] as const
   const albedoFallback: Record<(typeof albedoKeys)[number], () => THREE.Texture> = {
     concrete: concreteTexture,
@@ -263,10 +434,19 @@ export async function loadImageTextures(map: TextureMap, onStep?: (done: number,
     rusted: rustedTexture,
     m4_basecolor: () => woodTexture(),
     m4_roughness: () => metalTexture(),
+    plaster: plasterTexture,
+    tile: tileTexture,
   }
-  const jobs: Array<Promise<THREE.Texture>> = albedoKeys.map((k) => loadOrFallback(`/textures/${k}.png`, albedoFallback[k]))
+  const jobs: Array<Promise<THREE.Texture>> = albedoKeys.map((k) => {
+    const url = `/textures/${k}.png`
+    const seed = MEGA_SEEDS[k]
+    // V3：大面积表面走 2048 双层平铺合成（失败回退普通加载/程序化）
+    return seed
+      ? composeMegaTexture(url, seed).catch(() => loadOrFallback(url, albedoFallback[k]))
+      : loadOrFallback(url, albedoFallback[k])
+  })
   // 法线贴图（仅表面材质，缺失回退无操作）
-  const normalKeys = ['concrete', 'wood', 'sand', 'stone', 'rusted', 'sandbag'] as const
+  const normalKeys = ['concrete', 'wood', 'sand', 'stone', 'rusted', 'sandbag', 'plaster', 'tile'] as const
   jobs.push(
     ...normalKeys.map((k) =>
       new Promise<THREE.Texture | null>((resolve) => {

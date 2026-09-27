@@ -8,6 +8,8 @@ const nav = buildNavGrid(prepped, 24)
 const level = matchLevel()
 const plazaLevel = matchLevel('de_plaza')
 const plazaNav = buildNavGrid(prepareLevel(plazaLevel), 24)
+const costaLevel = matchLevel('de_costa')
+const costaNav = buildNavGrid(prepareLevel(costaLevel), 24)
 
 /** 路径是否经过上 B 洞（x∈[-1500,-1150] 洞段） */
 function viaUpperTunnel(nav: NavGrid, from: { x: number; z: number }, to: { x: number; z: number }): boolean {
@@ -73,6 +75,38 @@ describe('de_plaza 路由拓扑', () => {
 
   it('中央下沉广场 mid 可达（T 出生能下到广场）', () => {
     const p = astar(plazaNav, plazaLevel.spawns.T[0], { x: 0, z: 0 })
+    expect(p).not.toBeNull()
+  })
+})
+
+describe('de_costa 路由拓扑（G5 新竞技图）', () => {
+  it('T → A 高台可达（经西夹道/台阶上平台）', () => {
+    const p = astar(costaNav, costaLevel.spawns.T[0], costaLevel.sites[0].center)
+    expect(p).not.toBeNull()
+  })
+
+  it('T → B 花园台可达（经东夹道/台阶上平台）', () => {
+    const p = astar(costaNav, costaLevel.spawns.T[0], costaLevel.sites[1].center)
+    expect(p).not.toBeNull()
+  })
+
+  it('CT → A 与 CT → B 均可达', () => {
+    expect(astar(costaNav, costaLevel.spawns.CT[0], costaLevel.sites[0].center)).not.toBeNull()
+    expect(astar(costaNav, costaLevel.spawns.CT[0], costaLevel.sites[1].center)).not.toBeNull()
+  })
+
+  it('西廊（顶棚走廊）内部可达', () => {
+    const p = astar(costaNav, costaLevel.spawns.T[0], { x: -780, z: 0 })
+    expect(p).not.toBeNull()
+  })
+
+  it('中央下沉井可达（T 出生能下到井底）', () => {
+    const p = astar(costaNav, costaLevel.spawns.T[0], { x: 0, z: 0 })
+    expect(p).not.toBeNull()
+  })
+
+  it('东坑道坑底可达', () => {
+    const p = astar(costaNav, costaLevel.spawns.CT[0], { x: 780, z: 0 })
     expect(p).not.toBeNull()
   })
 })

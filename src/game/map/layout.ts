@@ -11,6 +11,8 @@ export type BrushMaterial =
   | 'roof'
   | 'sandbag'
   | 'rusted'
+  | 'plaster'
+  | 'tile'
 
 export interface Brush {
   /** 脚底坐标系：min.y 为底面 */

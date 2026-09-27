@@ -463,7 +463,7 @@ export class AudioEngine {
   /** 脚步（CC0 采样按材质区分；静走由移动层不触发事件实现） */
   footstep(material: string, x: number, y: number, z: number, isLocal: boolean): void {
     const key =
-      material === 'concrete'
+      material === 'concrete' || material === 'plaster' || material === 'tile'
         ? 'step_concrete'
         : material === 'wood'
           ? 'step_wood'

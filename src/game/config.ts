@@ -3,6 +3,22 @@
  * 单位制：1u = 1 Three.js 场景单位 = CS 世界单位（1u ≈ 3cm，玩家站立 72u ≈ 2.16m）。
  * 数值目标：严格对标 CS 手感，M1 起逐 tick 校准。
  */
+/** V3+V6 地图天空/光照色板（renderer.configure + addSkyDome 按图切换） */
+export interface SkyPalette {
+  readonly sky: number
+  readonly fogNear: number
+  readonly fogFar: number
+  readonly top: number
+  readonly mid: number
+  readonly horizon: number
+  readonly sun: number
+  readonly far: number
+  readonly sunIntensity: number
+  readonly sunAltitudeDeg: number
+  readonly sunAzimuthDeg: number
+  readonly hemiIntensity: number
+}
+
 export const CONFIG = {
   tickRate: 64,
 
@@ -148,6 +164,29 @@ export const CONFIG = {
   skyColor: 0x8fb8d8,
   fogNear: 1400,
   fogFar: 6000,
+  /** V3 明暗分层 + V6 地图色温调色板：太阳强度/角度（长影）、半球环境光、天空三段色、雾 */
+  SKY_PALETTES: {
+    de_sahara: {
+      sky: 0xe8d9b8, fogNear: 1400, fogFar: 6000,
+      top: 0x3a6ea8, mid: 0x8fb8d8, horizon: 0xe8cfa0, sun: 0xfff1cf, far: 0xb09a72,
+      sunIntensity: 2.8, sunAltitudeDeg: 24, sunAzimuthDeg: 205, hemiIntensity: 0.45,
+    },
+    de_plaza: {
+      sky: 0xd8e4e8, fogNear: 1200, fogFar: 5600,
+      top: 0x2e5f9e, mid: 0x7fa8d0, horizon: 0xdce8ec, sun: 0xfff6e0, far: 0x7f95a8,
+      sunIntensity: 3.0, sunAltitudeDeg: 32, sunAzimuthDeg: 155, hemiIntensity: 0.5,
+    },
+    training: {
+      sky: 0xdfe8ee, fogNear: 1400, fogFar: 6000,
+      top: 0x4a7ab0, mid: 0x9fc0dd, horizon: 0xe0e8ee, sun: 0xfff1cf, far: 0x8a97a5,
+      sunIntensity: 2.6, sunAltitudeDeg: 40, sunAzimuthDeg: 180, hemiIntensity: 0.5,
+    },
+    de_costa: {
+      sky: 0xcfe0ea, fogNear: 1200, fogFar: 5400,
+      top: 0x2f6ba8, mid: 0x7fb0d8, horizon: 0xd8e6ee, sun: 0xfff6e6, far: 0x6f8ea0,
+      sunIntensity: 2.9, sunAltitudeDeg: 28, sunAzimuthDeg: 140, hemiIntensity: 0.48,
+    },
+  } as Record<string, SkyPalette>,
   /** #11 屏幕震动：按距离衰减的半径与最大幅度（原散落 800/3 收口） */
   shakeDecayDist: 800,
   shakeMaxAmp: 3,

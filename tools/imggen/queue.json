@@ -102,5 +102,21 @@
   {
     "file": "m4_roughness",
     "prompt": "Seamless tileable PBR roughness map only, grayscale, flat diffuse, no specular. Subject: M4A4 rifle, matte polymer handguard high roughness #b0b0b0, slightly smoother metal receiver #808080, light variation. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, grayscale only, no color, no objects, no perspective, no vignette, high detail 4k texture."
+  },
+  {
+    "file": "plaster",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: Mediterranean white plaster wall, warm off-white cream #ece5d8, fine lime-plaster texture, subtle vertical drip stains, light aged patches and hairline cracks, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "plaster_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: Mediterranean white lime-plaster wall, fine bumpy plaster texture, faint cracks and drip ridges. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "tile",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: Mediterranean stone tile plaza floor, light warm gray beige stone tiles #cfc8bc in a regular grid with thin darker grout lines #9a948a, subtle tile-to-tone variation, uniform matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
+  },
+  {
+    "file": "tile_n",
+    "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: Mediterranean stone tile plaza floor, raised stone tiles with recessed thin grout lines, light surface weathering. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
   }
 ]
