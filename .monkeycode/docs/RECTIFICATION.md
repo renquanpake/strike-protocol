@@ -161,8 +161,8 @@
 
 | 项 | 状态 | commit | 备注 |
 |---|---|---|---|
-| V1 | 未开始 | - | |
-| V2 | 未开始 | - | |
+| V1 | ✅ | 8f7a9df | 枪模 PBR 提亮(gun_steel/gun_wood 非黑盒)+M4 GLB 补 PBR 贴图(baseColor/normal/roughness, imggen 生成)+手臂模型(袖套贴图/握枪姿态)+开火后坐/换弹下探/切枪入场动画+各枪类 muzzle 对齐。GLB 全枪类接入入口保留(现仅 M4 GLB) |
+| V2 | ✅ | b605707 | CC0 真实采样(Kenney impact/interface/sci-fi，45 ogg) + 合成枪声 buffer(16 枪类闭眼可区分) + PannerNode 空间化保留；master.gain 接设置层；命中三态(金属/木/沙地)+爆头铃+脚步材质区分 |
 | V3 | 未开始 | - | |
 | V4 | 待用户浏览器验收 | - | |
 | V5 | 未开始 | - | |
