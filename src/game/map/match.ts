@@ -28,7 +28,8 @@ export function matchLevel(mapId: MapId = 'de_sahara'): LevelDef {
  * T 出生（南）三路进攻：长道 → A（高台 48）、中门（双门缝）→ CT mid、上 B 洞 → B（台地）。
  * CT 出生（北）：CT 坡上 A、西走廊守 B、回防 B 走下 B 洞（露天堑壕 -48）。
  * 中部高架 catwalk（A 短）上 A 平台；长道含 pit 下沉坑；A 点 goose/车掩体。
- * 玩家高 140u：门洞净空 ≥150u，通道净宽 ≥120u，台阶 ≤32u/级。
+ * 玩家高 72u（=CONFIG.playerHeight，与视觉人物同高）：门洞净空 ≥150u，通道净宽 ≥120u，台阶 ≤32u/级。
+ *  注：早期"140u"标尺为误，实际几何按 ~72u 玩家调（48u 箱=玩家 67%、72u 墙=头高可跳越）。
  */
 function buildDeSahara(): LevelDef {
   const brushes: Brush[] = []

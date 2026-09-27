@@ -42,7 +42,7 @@
 - Category: 构建方法
 - Instructions:
   - 当前人物模型：`public/models/character.glb`（Mixamo 全动画 PBR，11 段含 Death01/Hit_Chest 死亡帧，3.25MB，主模型）；回退链 `soldier.glb`（three.js 官方 "Vanguard" CC，仅 Idle/Run/Walk）→色块人形。
-  - 人物视觉高度可调：`CONFIG.charVisualHeight`（默认 124u，调区间 120–140）→ `loadCharacterModel(url, team, targetHeight)` 归一化。地图/箱子按 140u 尺度建造（箱 96u≈waist，CS 箱/人 69%），140 与地图最自洽；本地 `eyeHeight=64` 偏低是 bot 显得高的另一来源（玩法参数未动）。
+  - 人物视觉高度：`CONFIG.charVisualHeight`（=72，必须与 `playerHeight` 一致才"看起来一样高"）→ `loadCharacterModel(url, team, targetHeight)` 归一化。**全游戏标尺 = ~72u 玩家**（48u 箱=玩家 67%、72u 墙=头高可跳越、57u 跳≈玩家 80%）；match.ts 早期注释"玩家 140u"是过时误标尺，已修正。人物 140u 会显 2 倍巨型。
   - 人物材质为 PBR Standard（场景已有 RoomEnvironment PMREM IBL，Standard 不发黑）+ 柔和阵营 tint（CHAR_TINTS）；强识别靠地面阵营光环 + 雷达点色。
   - 无缝贴图生成：`cd /workspace && node tools/imggen/gen.mjs [file...]`（读 `tools/imggen/queue.json`，调 agnes 生图 API，写 `public/textures/{file}.png`，`--force` 重生成）；新贴图需在 `src/engine/textures.ts` 的 `buildTextures` + `loadImageTextures` 登记键；法线贴图键 = `{key}_n`（`loadImageTextures` 自动挂 normalMap，缺失静默回退 albedo）。
   - GLB 压缩管线：`/tmp/opencode/gltftrim/`（gltf-transform v4 + sharp + meshoptimizer），模板 `trim_soldier.mjs`、检查 `inspect.mjs`。v4 注意：`io.writeBinary(doc)` 返回 Uint8Array（自己写盘）；禁用 meshopt/quantize（会删 Skin）。
