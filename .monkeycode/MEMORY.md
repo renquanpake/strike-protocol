@@ -68,3 +68,12 @@
   - `window.__game`（DEV-only）暴露 `state()/tickOnce()/nav/level/events/renderer/textures/bulletPool/scorchPool/shotPool/input/buy(itemId)`，可无鼠标驱动走查（`input` 的边沿键 G/R/B 与移动键在 CDP keydown 下生效，但 fireHeld/aimHeld 因无指针锁恒 false）。
   - 注入玩家输入的正确方式：包一层 `g.input.poll`（`g.input.poll = () => { const f = orig(); f.forward = 1; return f }`），用完 `delete g.input.poll` 还原——直接给 `p.input` 赋值无效（`stepLogic` 每 tick 用 `input.poll()` 的结果覆盖 `players[0].input`）。自然 rAF 循环在后台 tab 几乎不 tick，确定性走查要显式 `g.tickOnce()` 驱动。
   - 台阶碰撞（`step-up`）行为注意：de_sahara 的"三级台阶"是 y∈[0,16/32/48] 的实心 slab 堆叠，玩家 48u 宽 footprint 在台阶区会同时压住多级 slab，Y_TOLERANCE=24 磁吸会沿 brush 列表级联抬升（0→16→32），probe 读数易混；台阶逻辑验证用 `tests/movement.test.ts` 的合成 step18/step32 用例（干净几何）为准。
+
+### [工作纪律: 一切开发必须参照改正书]
+- Date: 2026-09-27
+- Context: 用户要求把实机审查结论固化为改正书，以后工作必须参照
+- Category: 工作流与协作
+- Instructions:
+  - 用户明确指示：「以后工作必须参照改正书」。改正书位于 `.monkeycode/docs/RECTIFICATION.md`（2026-09-27 实机截图 + 源码探查得出）。
+  - 任何新任务开工前先对照改正书：与其冲突的旧 BACKLOG 条目以改正书为准；甲部 P0（V1 枪模、V2 音效）未完成前不启动新玩法功能（G1/G2 可并行，文件域不同）。
+  - 改正项完成一项就在改正书「完成记录」表打勾并注明 commit。
