@@ -18,10 +18,10 @@ export default defineConfig({
     port: 3000,
   },
   plugins: [
-    // #39 PWA 离线缓存：precache 全部 public 资源（模型/贴图/纹理）
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['models/*', 'textures/*', 'char_preview.html'],
+      // #39 PWA 离线缓存：precache 全部 public 资源（模型/贴图/纹理/CC0 音效）
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['models/*', 'textures/*', 'sounds/*', 'char_preview.html'],
       manifest: {
         name: 'STRIKE PROTOCOL',
         short_name: 'Strike',
@@ -36,7 +36,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,glb,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,glb,png,woff2,ogg}'],
         navigateFallback: '/index.html',
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },

@@ -224,7 +224,7 @@ export function fireWeapon(
   )
 
   const boxes = hitBoxes(state, level, p.id)
-  let wallHit: { point: Vec3; normal: Vec3; penetrated: boolean } | null = null
+  let wallHit: { point: Vec3; normal: Vec3; penetrated: boolean; material?: string } | null = null
   let anyPenetrated = false
   // G1 穿墙（wallbang）：按武器 wallPenetration 决定可穿层数（≥0.9 穿 maxLayers，其余 1 层），材质衰减见 CONFIG.wallbang
   const wp = def.wallPenetration ?? 0
@@ -252,14 +252,14 @@ export function fireWeapon(
     )
     let hit
     let dmgScale = 1
-    let entry: { point: Vec3; normal: Vec3 } | null = null
+    let entry: { point: Vec3; normal: Vec3; target: string } | null = null
     if (penMaxLayers > 0) {
       const res = raycastBoxesWithPenetration(eye, dir, boxes, isPenetrable, attenuationOf, penMaxLayers)
       hit = res.hit
       dmgScale = res.damageScale
-      if (res.penetrated) {
+      if (res.penetrated && res.entry) {
         anyPenetrated = true
-        if (res.entry) entry = { point: res.entry.point, normal: res.entry.normal }
+        entry = { point: res.entry.point, normal: res.entry.normal, target: res.entry.target }
       }
     } else {
       hit = raycastBoxes(eye, dir, boxes)
@@ -268,6 +268,12 @@ export function fireWeapon(
     // G1 穿墙命中后距离取眼位→最终命中的总距（衰减正确性）
     const dist =
       dmgScale < 1 ? Math.hypot(hit.point.x - eye.x, hit.point.y - eye.y, hit.point.z - eye.z) : hit.t
+    // 命中面材质（供 CC0 命中音效三态：金属/木/沙地）；穿墙取穿透层材质
+    const matOf = (target: string): string | undefined => {
+      if (!target.startsWith('brush:')) return undefined
+      return level.solids[Number(target.slice(6))]?.material
+    }
+    const hitMat = matOf(entry?.target ?? hit.target)
 
     if (hit.target.startsWith('target:')) {
       const tid = Number(hit.target.split(':')[1])
@@ -280,7 +286,7 @@ export function fireWeapon(
       events.emit({ type: 'hit', victimId: tid, part, damage: dmg * dmgScale, attackerId: p.id })
       // G1 穿墙命中靶子：入口点投射烟尘 decal（仅本地玩家）
       if (entry && p.id === 0 && !wallHit) {
-        wallHit = { point: entry.point, normal: entry.normal, penetrated: true }
+        wallHit = { point: entry.point, normal: entry.normal, penetrated: true, material: hitMat }
       }
       if (t.health <= 0) {
         t.alive = false
@@ -296,7 +302,7 @@ export function fireWeapon(
       applyPlayerHit(state, p, victim, dmg * dmgScale, def, events, part === 'head', armorLost)
       // G1 穿墙命中实体：入口点投射烟尘 decal（仅本地玩家）
       if (entry && p.id === 0 && !wallHit) {
-        wallHit = { point: entry.point, normal: entry.normal, penetrated: true }
+        wallHit = { point: entry.point, normal: entry.normal, penetrated: true, material: hitMat }
       }
     } else if (hit.target.startsWith('brush:')) {
       // #35 玻璃：命中玻璃 brush → 一次性碎裂（物理通行 + 渲染隐藏 + 音效/碎片）
@@ -310,12 +316,12 @@ export function fireWeapon(
       // G1 穿墙命中：decals 投在首个穿透点（入口），concrete 厚墙投在最终命中点
       const at = entry ?? { point: hit.point, normal: hit.normal }
       if (p.id === 0 && !wallHit) {
-        wallHit = { point: at.point, normal: at.normal, penetrated: entry !== null }
+        wallHit = { point: at.point, normal: at.normal, penetrated: entry !== null, material: hitMat }
       }
     } else if (p.id === 0 && !wallHit) {
       // 命中地图墙体（仅本地玩家，供印花投射）
       const at = entry ?? { point: hit.point, normal: hit.normal }
-      wallHit = { point: at.point, normal: at.normal, penetrated: entry !== null }
+      wallHit = { point: at.point, normal: at.normal, penetrated: entry !== null, material: hitMat }
     }
   }
   if (wallHit) {
@@ -327,6 +333,7 @@ export function fireWeapon(
       normal: wallHit.normal,
       pellets: def.pellets,
       penetrated: wallHit.penetrated,
+      material: wallHit.material,
     })
   }
   events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id, muffled: anyPenetrated, penetrated: anyPenetrated })

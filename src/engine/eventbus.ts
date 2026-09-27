@@ -10,6 +10,8 @@ export type GameEvent =
       pellets: number
       /** G1 穿墙命中（在首个穿透点投射烟尘 decal + 闷声） */
       penetrated?: boolean
+      /** 命中面材质（CC0 命中音效区分：金属/木/沙地） */
+      material?: string
     }
   | { type: 'hit'; victimId: number; part: string; damage: number; attackerId: number }
   | { type: 'targetKilled'; victimId: number; weaponId: string }

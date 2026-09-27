@@ -142,6 +142,12 @@ events.on('shot', (e) => {
 })
 events.on('surfaceHit', (e) => {
   if (e.shooterId !== 0) return
+  const st = state
+  const p = st?.players[0]
+  const eyeY = p ? p.position.y + CONFIG.eyeHeight : 0
+  const dist = p ? Math.hypot(e.point.x - p.position.x, e.point.y - eyeY, e.point.z - p.position.z) : 0
+  // V2 CC0 命中材质三态（金属/木/沙地）；G1 穿墙命中走闷声
+  audio.surfaceHit(e.material, e.penetrated ?? false, e.point.x, e.point.y, e.point.z, dist)
   // G1 穿墙命中：入口点投射烟尘 decal（shot 池），非穿墙用弹孔 decal
   const pool = e.pellets > 1 ? shotPool : e.penetrated ? shotPool : bulletPool
   renderer.spawnDecal(pool, e.point, e.normal, e.pellets > 1 ? 2.4 : e.penetrated ? 1.8 : 1)
