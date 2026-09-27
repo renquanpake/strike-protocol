@@ -151,7 +151,7 @@
 ## 丁部：执行纪律
 
 1. **顺序约束**：甲部 P0（V1、V2）完成前，不启动任何新玩法功能；乙部 G1/G2 可与甲部 P1 并行（不同文件域）。
-2. **回归底线**：每项改正完成后 `npx tsc --noEmit` + `npx vitest run`（当前基线 134 用例，G1-G4 后由 121 升至 134）必须全绿；涉及渲染的附实机截图入 `/tmp/opencode/audit/` 或用户浏览器确认。
+2. **回归底线**：每项改正完成后 `npx tsc --noEmit` + `npx vitest run`（当前基线 140 用例：G1-G4 后 121→134，de_costa 路由回归 +6）必须全绿；涉及渲染的附实机截图入 `/tmp/opencode/audit/` 或用户浏览器确认。
 3. **数值入表**：所有新参数（穿透/弹道/tagging/蹲射）一律进 `src/game/config.ts` 或 WeaponDef，禁止硬编码。
 4. **文档同步**：完成一项在本文件该项打勾并注明 commit；与本文件冲突的旧 BACKLOG 条目以本文件为准。
 
@@ -163,12 +163,12 @@
 |---|---|---|---|
 | V1 | ✅ | 8f7a9df | 枪模 PBR 提亮(gun_steel/gun_wood 非黑盒)+M4 GLB 补 PBR 贴图(baseColor/normal/roughness, imggen 生成)+手臂模型(袖套贴图/握枪姿态)+开火后坐/换弹下探/切枪入场动画+各枪类 muzzle 对齐。GLB 全枪类接入入口保留(现仅 M4 GLB) |
 | V2 | ✅ | b605707 | CC0 真实采样(Kenney impact/interface/sci-fi，45 ogg) + 合成枪声 buffer(16 枪类闭眼可区分) + PannerNode 空间化保留；master.gain 接设置层；命中三态(金属/木/沙地)+爆头铃+脚步材质区分 |
-| V3 | 未开始 | - | |
-| V4 | 待用户浏览器验收 | - | |
-| V5 | 未开始 | - | |
-| V6 | 未开始 | - | |
+| V3 | ✅ | 1686ab2 | 天空改程序穹顶：三段渐变+FBM 云层+太阳光晕/日轮+远景剪影（HDRI 直链 404，按备选走程序云）；2048 双层平铺 mega-tile（9 张主表面 2x2 随机相位+第二层 AO 灰度污渍+边界晕影带，textures.ts composeMegaTexture）；光照分层（太阳 2.6-3.0 强度/24-40° 低角长影，半球光 0.45-0.5 压暗）；ACES 生效核验（renderer 既有 ACESFilmicToneMapping） |
+| V4 | 部分（待用户浏览器验收） | 1686ab2 | CHAR_TINTS 色相对比强化（T 橙砂 0xf0a038 / CT 冷蓝 0x5aa0ff，头部压暗反差）+ 自发光 0.25→0.45 + 阵营光环 disc 透明度 0.32→0.5 并修复光环贴脚（高台不再悬空）；模型装饰件（臂章/头巾）依赖 skinned 骨骼绑定，风险高，留待实机验收后决定 |
+| V5 | ✅ | 46e02f7 | 主菜单卡片化+自定义下拉/开关/滑杆；买菜单 4 列网格+手绘 SVG 剪影+快捷键+CS:GO 分区；Rajdhani woff2 本地字体；debug 面板默认关（?debug=1/设置项）；HUD 计分行等文案中文化（strings.ts） |
+| V6 | ✅ | 1686ab2 | 每图独立色板进 CONFIG.SKY_PALETTES（天空三段色/雾/太阳角度强度/远景色）：de_sahara 沙漠暖调、de_plaza 地中海冷调（plaster 白灰泥+tile 灰砖地）、de_costa 海滨蓝调；renderer.configure 按图切换；截图并排可辨（audit v_*_sky / v_plaza_0_center / v_sahara_0_long） |
 | G1 | ✅ | e18e59e | 穿墙：raycastBoxesWithPenetration + wallPenetration（awp 双层）+ 入口点烟尘 decal + muffled shot；白名单 wood/sandbag/sand（concrete 不可穿） |
 | G2 | ✅ | e18e59e | AK/M4 补满 30 段独立弹道（前 7 发近直/左漂/右摆形态）+ 停火 400ms 逐步恢复插值（recoilStopIndex 幂等快照）；武器表无 Galil，跳过 |
 | G3 | ✅ | e18e59e | 受击 tagging：tagFrom/UntilTick+tagStrength，按伤害 0.4-0.6s 衰减降移速，护甲减半 |
 | G4 | ✅ | e18e59e | 全枪 spreadDeg.crouch（stand 的 64-69%），蹲下与移动插值取最小 |
-| G5 | 未开始 | - | |
+| G5 | ✅ | 1686ab2 | 新增 de_costa（海滨小镇，3600×3000）：A 西高台 48（灰泥+南/西两级台阶）、B 东花园 24 台、西廊（顶棚 150 覆盖走廊）、中央大道（300u 长视距+下沉井）、东坑道（-32 坑底+玻璃挡板+蹲点）、大道两端 80u 双层狙台；注册 match.ts/AVAILABLE_MAPS/MAP_CARD/SKY_PALETTES；路由回归 tests/routes.test.ts +6 用例（140 全绿） |
