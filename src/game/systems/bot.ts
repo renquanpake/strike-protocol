@@ -59,6 +59,12 @@ export interface BotBrain {
   holdSwapped: boolean
   /** A-R5.2：本回合已执行过枪声支援 */
   supportingShot: boolean
+  /** A-R6：最近一次看到敌人的 tick（R6.2 换弹时机用） */
+  lastSeenTick: number
+  /** A-R6.1：远距离 burst 状态机 */
+  burstRemain: number
+  burstNextTick: number
+  burstPauseUntil: number
 }
 
 export type BotTactic = 'rush' | 'default' | 'slow' | 'lurk' | 'aggro' | 'stack'
@@ -147,6 +153,10 @@ export function createBotContext(
         holdSinceTick: 0,
         holdSwapped: false,
         supportingShot: false,
+        lastSeenTick: 0,
+        burstRemain: 0,
+        burstNextTick: 0,
+        burstPauseUntil: 0,
       })
     }
   }
@@ -386,7 +396,9 @@ export function updateBots(
       const dpitch = desiredPitch - p.pitch
       p.pitch += Math.max(-turnCap, Math.min(turnCap, dpitch))
       // 交战走位：周期切换侧移（#19：周期按难度）
-      const toRight = Math.floor(tick / profile.strafePeriod) % 2 === 0
+      // R6.4：近距（≤200u）加大走位幅度——侧移切换周期减半
+      const strafePeriod = dist <= 200 ? Math.max(16, profile.strafePeriod >> 1) : profile.strafePeriod
+      const toRight = Math.floor(tick / strafePeriod) % 2 === 0
       if (toRight) inp.right = 1
       else inp.left = 1
       // A-R4 掩体与生存：残血或换弹时转移到最近可遮挡威胁 LOS 的掩体（每场交战限 1 次）
@@ -397,13 +409,18 @@ export function updateBots(
         inp.aimHeld = false
       }
       // 开火（被致盲不开火；非狙击枪超射程不开火）
+      brain.lastSeenTick = tick
       if (!blinded && curW) {
         const def = WEAPONS[curW.defId]
         const inRange = def.category === 'sniper' || dist <= CONFIG.botHoldFireRange
         // #8：bot 狙击交火时开镜（获得 ADS 精度与低散布）
         inp.aimHeld = def.category === 'sniper' && curW.ammoMag > 0 && curW.reloadUntilTick === 0
         if (def && curW.ammoMag > 0 && curW.reloadUntilTick === 0 && inRange) {
-          if (def.auto) {
+          // R6.1 远距离 burst：自动武器 >300u 且难度档开启 burst 时，2-4 发点射 + 0.3-0.5s 间隔
+          if (def.auto && profile.burst && dist > 300) {
+            if (planBurst(brain, def, tick, rng)) inp.fireQueued = true
+          } else if (def.auto) {
+            // R6.4 近距（≤300u）全自动压射
             inp.fireHeld = true
           } else if (tick >= brain.nextShotTick) {
             inp.fireQueued = true
@@ -448,6 +465,12 @@ export function updateBots(
       }
     } else {
       brain.targetId = null
+      // R6.2：弹匣余量 ≤30% 且 3s 无敌人 → 换弹
+      const curW2 = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
+      if (curW2 && curW2.ammoMag > 0 && curW2.reloadUntilTick === 0 && tick - brain.lastSeenTick >= 3 * CONFIG.tickRate) {
+        const def2 = WEAPONS[curW2.defId]
+        if (def2.magazine > 0 && curW2.ammoMag <= def2.magazine * 0.3) inp.reloadQueued = true
+      }
       // A-R7：感知到敌人后驻停——反应窗口/记忆期内不推进战术目标，面向感知方向等待，
       // 防止窗口期走位漂出视野锥导致永远无法交战（回归缺陷修复）
       const perceived = brain.perceivedId !== null ? state.players[brain.perceivedId] : null
@@ -653,6 +676,33 @@ function pickRecentSound(queue: BotSound[], tick: number, shotWin: number, stepW
     if (shot && step) break
   }
   return shot ?? step
+}
+
+/** A-R6.1：远距离 burst 状态机——2-4 发点射（按武器射速），间隔 0.3-0.5s（纯函数，可单测）。
+ * 返回本 tick 是否开火（发射 1 发），状态存于 brain.burst*。 */
+export function planBurst(
+  brain: Pick<BotBrain, 'burstRemain' | 'burstNextTick' | 'burstPauseUntil'>,
+  def: { fireRateMs: number },
+  tick: number,
+  rng: { float(): number },
+): boolean {
+  const rateTicks = Math.max(1, Math.round((def.fireRateMs / 1000) * CONFIG.tickRate))
+  if (brain.burstRemain > 0) {
+    if (tick < brain.burstNextTick) return false
+    brain.burstRemain -= 1
+    brain.burstNextTick = tick + rateTicks + 1
+    if (brain.burstRemain === 0) {
+      brain.burstPauseUntil = tick + Math.round((0.3 + rng.float() * 0.2) * CONFIG.tickRate)
+    }
+    return true
+  }
+  if (tick >= brain.burstPauseUntil) {
+    const n = 2 + Math.floor(rng.float() * 3) // 本组 2-4 发
+    brain.burstRemain = n - 1 // 本 tick 发 1 发，余 n-1
+    brain.burstNextTick = tick + rateTicks + 1
+    return true
+  }
+  return false
 }
 
 /** A-R4 掩体与生存：残血（≤30）或换弹中→转移最近可遮挡威胁 LOS 的掩体；每场交战限 1 次。
