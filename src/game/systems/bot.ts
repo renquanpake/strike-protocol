@@ -49,6 +49,10 @@ export interface BotBrain {
   /** A-R3：最后已知位置（目标丢视野时记录，按 profile.lkpSec 追击） */
   lkp: { x: number; z: number } | null
   lkpStartTick: number
+  /** A-R4：掩体转移目标（每次交战限 1 次，coverUsed 记录额度） */
+  cover: Vec3 | null
+  coverUsed: boolean
+  coverEnterTick: number
 }
 
 export type BotTactic = 'rush' | 'default' | 'slow' | 'lurk' | 'aggro' | 'stack'
@@ -131,6 +135,9 @@ export function createBotContext(
         soundYawTarget: null,
         lkp: null,
         lkpStartTick: 0,
+        cover: null,
+        coverUsed: false,
+        coverEnterTick: 0,
       })
     }
   }
@@ -364,6 +371,13 @@ export function updateBots(
       const toRight = Math.floor(tick / profile.strafePeriod) % 2 === 0
       if (toRight) inp.right = 1
       else inp.left = 1
+      // A-R4 掩体与生存：残血或换弹时转移到最近可遮挡威胁 LOS 的掩体（每场交战限 1 次）
+      const coverMove = applyCover(level, p, brain, profile, enemy, tick, inp)
+      if (coverMove.suppressFire) {
+        inp.fireHeld = false
+        inp.fireQueued = false
+        inp.aimHeld = false
+      }
       // 开火（被致盲不开火；非狙击枪超射程不开火）
       if (!blinded && curW) {
         const def = WEAPONS[curW.defId]
@@ -578,6 +592,95 @@ function pickRecentSound(queue: BotSound[], tick: number, shotWin: number, stepW
     if (shot && step) break
   }
   return shot ?? step
+}
+
+/** A-R4 掩体与生存：残血（≤30）或换弹中→转移最近可遮挡威胁 LOS 的掩体；每场交战限 1 次。
+ * 转移期与藏掩体期抑制开火（R4.2 / R6.3），到位 2s 后探出接敌。返回是否抑制开火。 */
+function applyCover(
+  level: PreppedLevel,
+  p: PlayerEntity,
+  brain: BotBrain,
+  profile: (typeof CONFIG.BOT_DIFFICULTY)[number],
+  enemy: PlayerEntity,
+  tick: number,
+  inp: InputFrame,
+): { suppressFire: boolean } {
+  const curW = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
+  const reloading = curW ? curW.reloadUntilTick > 0 : false
+  if (profile.cover && !brain.coverUsed && (p.health <= 30 || reloading)) {
+    brain.cover = findCover(level, p, enemy.position.x, enemy.position.z)
+    brain.coverUsed = true
+    brain.coverEnterTick = 0
+  }
+  if (!brain.cover) return { suppressFire: false }
+  const cdx = brain.cover.x - p.position.x
+  const cdz = brain.cover.z - p.position.z
+  const cdist = Math.hypot(cdx, cdz)
+  if (cdist > 30) {
+    // 向掩体点移动并抑制开火
+    const cl = Math.max(1, cdist)
+    const nx = cdx / cl
+    const nz = cdz / cl
+    const fx = -Math.sin(p.yaw)
+    const fz = -Math.cos(p.yaw)
+    const rx = Math.cos(p.yaw)
+    const rz = -Math.sin(p.yaw)
+    const fwd = nx * fx + nz * fz
+    const side = nx * rx + nz * rz
+    inp.forward = fwd > 0.4 ? 1 : 0
+    inp.back = fwd < -0.4 ? 1 : 0
+    inp.right = side > 0.4 ? 1 : 0
+    inp.left = side < -0.4 ? 1 : 0
+    return { suppressFire: true }
+  }
+  // 已在掩体：启动 2s 探出延迟，藏身期按是否换弹抑制开火
+  if (brain.coverEnterTick === 0) brain.coverEnterTick = tick
+  inp.forward = 0
+  inp.back = 0
+  inp.right = 0
+  inp.left = 0
+  if (tick - brain.coverEnterTick >= 2 * CONFIG.tickRate) {
+    brain.cover = null // R4.3 探出：恢复正常交战
+    return { suppressFire: false }
+  }
+  return { suppressFire: reloading }
+}
+
+/** A-R4：搜索最近可阻断威胁 LOS 的掩体点（候选环：12 向 × 3 档距离；候选点自身不入 solid） */
+function findCover(level: PreppedLevel, p: PlayerEntity, tx: number, tz: number): Vec3 | null {
+  const solids = level.solids
+  const boxes = solids.map((b, i) => ({ id: `b${i}`, min: b.min, max: b.max }))
+  const eyeY = p.position.y + CONFIG.eyeHeight
+  const toT = Math.atan2(tx - p.position.x, tz - p.position.z)
+  let best: Vec3 | null = null
+  let bestD = Infinity
+  for (let a = 0; a < 12; a++) {
+    const ang = toT + ((a + 0.5) / 12) * Math.PI * 2
+    for (const dist of [100, 200, 300]) {
+      const cx = p.position.x + Math.sin(ang) * dist
+      const cz = p.position.z + Math.cos(ang) * dist
+      let inSolid = false
+      for (const b of solids) {
+        if (b.min.y > eyeY + 30 || b.max.y < eyeY - 30) continue
+        if (cx >= b.min.x && cx <= b.max.x && cz >= b.min.z && cz <= b.max.z) {
+          inSolid = true
+          break
+        }
+      }
+      if (inSolid) continue
+      const dx = tx - cx
+      const dz = tz - cz
+      const L = Math.max(1, Math.hypot(dx, dz))
+      const hit = raycastBoxes(v3(cx, eyeY, cz), v3(dx / L, 0, dz / L), boxes)
+      if (!hit || hit.t > L - 8) continue // 候选点→威胁未被遮挡 = 无掩体
+      const d = Math.hypot(cx - p.position.x, cz - p.position.z)
+      if (d < bestD) {
+        bestD = d
+        best = v3(cx, p.position.y, cz)
+      }
+    }
+  }
+  return best
 }
 
 /** 感知：最近 LOS 可见敌人（前向视野 + 难度感知距离） */
