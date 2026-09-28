@@ -86,4 +86,13 @@
   - headless 无指针锁：开局后 pointerlockchange 触发自动暂停，画面被暂停菜单盖住。审计脚本在点"开 始 对 局"后要再点一次暂停菜单里的"继 续"按钮（`button.sp-btn.primary` 文案含"继"），否则所有截图都是暂停菜单。
   - three.js ShaderMaterial 编译失败**不抛 JS 异常**，只在 console 打 `THREE.WebGLProgram: Shader Error`，失败后该材质整体不渲染（天空穹顶静默消失，回退到 `scene.background` 纯色）。审计天空类改动务必监听 console 里的 `shader/program` 关键字（`page.on('console')`）或用 `__game.renderer.scene.children` 探 `material.program` 是否存在。
   - high 画质（4096 阴影图）在 swiftshader 下连续多局会 `CONTEXT_LOST_WEBGL` 丢上下文；审计用 medium 即可，稳定。
-  - 相机 pitch 符号：`renderer.camera.rotation.x = pose.pitch`，**正 pitch 朝上看天**（+1.15 拍到天空），负值看地。
+   - 相机 pitch 符号：`renderer.camera.rotation.x = pose.pitch`，**正 pitch 朝上看天**（+1.15 拍到天空），负值看地。
+
+### [工作流: 规划先行 + 优化书体系]
+- Date: 2026-09-28
+- Context: 用户连续两轮强调"只规划不施工"，规划经三问确认后才放行施工
+- Category: 工作流与协作
+- Instructions:
+  - 新功能先出 EARS 需求规划并向用户提关键决策问题（每轮最多 3 个），用户确认后才可施工；用户未放行前只写文档。
+  - 全局优化总纲在 `.monkeycode/docs/OPTIMIZATION.md`（优化书，自包含可读，含背景/根因/需求/批次表）；细版 EARS 需求在 `.monkeycode/specs/{feature}/requirements.md`，权威版以优化书为准。
+  - 优化书与改正书配合：改正书记录已完成审计修正，优化书是下一轮施工依据；已确认规划：Bot 大修（视觉两步走、智能一批全做、难度偏硬核）与输入/移动端（预设+编辑器、灵敏度四项、横屏提示+可锁）。

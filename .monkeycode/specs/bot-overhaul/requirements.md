@@ -2,7 +2,7 @@
 
 Feature Name: bot-overhaul
 Updated: 2026-09-28
-Status: 已确认（2026-09-28 用户决策）
+Status: 已确认（2026-09-28 用户决策）— 本文内容已并入优化书 `.monkeycode/docs/OPTIMIZATION.md`（权威版），施工以优化书为准
 
 ## 用户决策记录（2026-09-28）
 
