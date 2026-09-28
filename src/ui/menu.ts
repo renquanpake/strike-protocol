@@ -161,6 +161,7 @@ export class MenuUI {
       onStart(cfg: MatchConfig): void
       onExit(): void
       onResume(): void
+      onInputMode?(mode: Settings['inputMode']): void
     },
   ) {
     injectStyle()
@@ -299,6 +300,14 @@ export class MenuUI {
     setCol.appendChild(this.mkRange('触摸视角灵敏度', 0.2, 3, 0.05, s.touchSens, (v) => (s.touchSens = v)))
     setCol.appendChild(this.mkToggle('开镜灵敏度分离', s.aimSensSplit, (v) => (s.aimSensSplit = v)))
     setCol.appendChild(this.mkRange('开镜灵敏度', 0.2, 1.5, 0.05, s.aimSens, (v) => (s.aimSens = v)))
+    // B-R3 操作方式：自动检测（默认）/ 触屏 / 键鼠
+    const modeSel = this.mkDropdown(
+      '操作方式',
+      ['自动检测', '触屏', '键鼠'],
+      s.inputMode === 'touch' ? 1 : s.inputMode === 'mouse' ? 2 : 0,
+      (i) => (s.inputMode = i === 1 ? 'touch' : i === 2 ? 'mouse' : 'auto'),
+    )
+    setCol.appendChild(modeSel)
 
     setCol.appendChild(this.mkEl('div', 'sp-sec', '音频'))
     setCol.appendChild(this.mkRange('音量', 0, 1, 0.05, s.volume, (v) => (s.volume = v)))
@@ -432,6 +441,25 @@ export class MenuUI {
       this.applySettings()
     }))
     panel.appendChild(qsec)
+    // B-R3.3 暂停菜单切换操作方式（即时重建输入层）
+    const imRow = this.mkEl('div', '', '操作方式')
+    const modes: { label: string; m: Settings['inputMode'] }[] = [
+      { label: '自动', m: 'auto' },
+      { label: '触屏', m: 'touch' },
+      { label: '键鼠', m: 'mouse' },
+    ]
+    for (const it of modes) {
+      const b = this.mkEl('button', 'sp-btn', it.label)
+      if (s.inputMode === it.m) b.classList.add('primary')
+      b.addEventListener('click', () => {
+        s.inputMode = it.m
+        this.cb.onInputMode?.(it.m)
+        for (const x of imRow.querySelectorAll('button')) x.classList.remove('primary')
+        b.classList.add('primary')
+      })
+      imRow.appendChild(b)
+    }
+    panel.appendChild(imRow)
     this.root.appendChild(ov)
   }
 

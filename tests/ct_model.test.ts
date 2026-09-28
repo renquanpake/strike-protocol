@@ -1,3 +1,4 @@
+// @ts-nocheck — 资产守卫测试：依赖 node 内置 fs/path（浏览器 tsconfig 不含 node 类型）
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'

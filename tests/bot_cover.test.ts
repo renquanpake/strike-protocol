@@ -53,7 +53,6 @@ function setupCorridor() {
   enemy.position = v3(1300, 0, -300)
   enemy.yaw = Math.PI / 2
   enemy.health = 5000
-  enemy.healthMax = 5000
   for (let i = 1; i < 10; i++) {
     if (i === 5) continue
     state.players[i].position = v3(400, 0, 1500)
@@ -113,7 +112,6 @@ describe('A-R4 掩体与生存', () => {
     const enemy = state.players[0]
     enemy.position = v3(1300, 0, -300)
     enemy.health = 5000
-    enemy.healthMax = 5000
     for (let i = 1; i < 10; i++) {
       if (i === 5) continue
       state.players[i].position = v3(400, 0, 1500)

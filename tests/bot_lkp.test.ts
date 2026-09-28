@@ -55,7 +55,6 @@ describe('A-R3 目标记忆与 LKP 追击', () => {
     bot.position = v3(1100, 0, -300)
     bot.yaw = -Math.PI / 2 // 朝 +X
     bot.health = 5000
-    bot.healthMax = 5000
     const enemy = state.players[1] // T bot
     enemy.position = v3(1300, 0, -300)
     enemy.yaw = Math.PI / 2
@@ -65,7 +64,6 @@ describe('A-R3 目标记忆与 LKP 追击', () => {
     }
     // 先让 bot 感知到敌人 1s（加血防止交战期内阵亡）
     enemy.health = 5000
-    enemy.healthMax = 5000
     sim(state, ctx, prepped, nav, events, 64)
     expect(ctx.brains.get(5)!.perceivedId).not.toBe(null)
     // 敌人瞬移到死角（丢视野）
@@ -87,12 +85,10 @@ describe('A-R3 目标记忆与 LKP 追击', () => {
     bot.position = v3(1100, 0, -300)
     bot.yaw = -Math.PI / 2
     bot.health = 5000
-    bot.healthMax = 5000
     const enemy = state.players[1]
     enemy.position = v3(1300, 0, -300)
     enemy.yaw = Math.PI / 2
     enemy.health = 5000
-    enemy.healthMax = 5000
     for (let i = 0; i < 10; i++) {
       if (i === 5 || i === 1) continue
       state.players[i].position = v3(400, 0, 1500)
@@ -113,12 +109,10 @@ describe('A-R3 目标记忆与 LKP 追击', () => {
     bot.position = v3(1100, 0, -300)
     bot.yaw = -Math.PI / 2
     bot.health = 5000
-    bot.healthMax = 5000
     const enemy = state.players[1]
     enemy.position = v3(1300, 0, -300)
     enemy.yaw = Math.PI / 2
     enemy.health = 5000
-    enemy.healthMax = 5000
     for (let i = 0; i < 10; i++) {
       if (i === 5 || i === 1) continue
       state.players[i].position = v3(400, 0, 1500)

@@ -32,7 +32,7 @@ import { updateShells, spawnShell, type Shell } from './game/particles'
 import { TracerRing, tracerWanted } from './game/tracer'
 import { raycastBoxes } from './game/physics/raycast'
 import { v3 } from './engine/math'
-import { loadSettings, loadMatchConfig, type Settings, type MatchConfig } from './ui/settings'
+import { loadSettings, saveSettings, loadMatchConfig, type Settings, type MatchConfig } from './ui/settings'
 import { WEAPONS, newWeaponInstance } from './game/weapons'
 import { activeWeapon } from './game/systems/weapon'
 import { persistMatchEnd, achievementName } from './game/achievements'
@@ -69,13 +69,37 @@ let textures: TextureMap = buildTextures()
 // ===== 全局持久对象 =====
 const input = new InputController()
 input.attach(canvas)
-// 移动端触控层：触屏设备 / mobile.html / ?touch 自动启用（左摇杆 + 右拖拽视角 + 动作键）
-const IS_TOUCH =
-  window.matchMedia && window.matchMedia('(pointer: coarse)').matches
-    ? true
-    : 'ontouchstart' in window || location.pathname.includes('mobile') || new URLSearchParams(location.search).has('touch')
+// 移动端触控层：按 B-R3「操作方式」启用（auto=自动检测 / touch=强制触屏 / mouse=强制键鼠）
+const IS_TOUCH_HINT =
+  (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+  'ontouchstart' in window ||
+  location.pathname.includes('mobile') ||
+  new URLSearchParams(location.search).has('touch')
+function activeTouch(): boolean {
+  switch (settings.inputMode) {
+    case 'touch':
+      return true
+    case 'mouse':
+      return false
+    default:
+      return IS_TOUCH_HINT // auto
+  }
+}
 let touch: TouchController | null = null
-if (IS_TOUCH) touch = new TouchController(hudRoot, input)
+if (activeTouch()) touch = new TouchController(hudRoot, input)
+/** B-R3.3：对局中切换操作方式——即时重建输入层 */
+function setInputMode(mode: Settings['inputMode']): void {
+  settings.inputMode = mode
+  const wantTouch = activeTouch()
+  if (wantTouch && !touch) {
+    touch = new TouchController(hudRoot, input)
+    touch.lookScale = settings.touchSens
+  }
+  if (!wantTouch && touch) {
+    touch.setVisible(false)
+  }
+  saveSettings(settings)
+}
 const hud = new HUD(hudRoot)
 const loop = new FixedLoop(CONFIG.tickRate)
 const audio = new AudioEngine()
@@ -429,7 +453,7 @@ let prevLocalWeaponId = ''
 function stepLogic(dt: number): void {
   const st = state
   if (!st) return
-  const frame = touch ? touch.poll() : input.poll()
+  const frame = activeTouch() ? (touch?.poll() ?? input.poll()) : input.poll()
   const local = st.players[0]
   local.input = frame
   // 开镜档位（每 tick 推进，逻辑层确定性；渲染层只消费 p.aimStage）
@@ -792,7 +816,7 @@ function frame(now: number): void {
     fpsWindowStart = now
   }
 
-  hud.update(st, fps, input.locked || (touch ? true : false), now)
+  hud.update(st, fps, input.locked || activeTouch(), now)
   // 致盲白屏
   const blindEl = document.getElementById('blind') as HTMLElement | null
   if (blindEl) {
@@ -1030,7 +1054,16 @@ async function init(): Promise<void> {
       menuUI.hidePause()
       phase = 'running'
       loop.reset()
-      if (!IS_TOUCH) canvas.requestPointerLock()
+      if (!activeTouch()) canvas.requestPointerLock()
+      touch?.setVisible(phase === 'running')
+    },
+    onInputMode: (mode) => {
+      setInputMode(mode)
+      if (phase === 'running' || phase === 'paused') {
+        // B-R3.3：对局中切换——即时生效（触屏层显隐 + 指针锁策略）
+        touch?.setVisible(activeTouch() && phase === 'running')
+        if (!activeTouch() && phase === 'running') canvas.requestPointerLock()
+      }
     },
   })
   // 移动端暂停按钮（替代桌面 ESC/指针锁释放）

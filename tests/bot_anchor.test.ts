@@ -89,7 +89,6 @@ describe('A-R5 防守架点', () => {
     const bx = state.players[5].position.x
     const bz = state.players[5].position.z
     const startX = brain.objective.x
-    const startZ = brain.objective.z
     // 声源在 bot 东侧 400u
     events.emit({ type: 'shot', shooterId: 0, weaponId: 'ak' })
     ;(ctx.heard[0] as { x: number; z: number }).x = bx + 400

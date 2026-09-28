@@ -22,6 +22,8 @@ export interface Settings {
   aimSensSplit: boolean
   /** B-R2：0.2-1.5 开镜状态转速倍率（开镜灵敏度分离开启时生效） */
   aimSens: number
+  /** B-R3：操作方式（auto=自动检测 / touch=触屏 / mouse=键鼠） */
+  inputMode: 'auto' | 'touch' | 'mouse'
   /** 0-1 主音量 */
   volume: number
   crosshair: CrosshairSettings
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   touchSens: 1,
   aimSensSplit: false,
   aimSens: 0.5,
+  inputMode: 'auto',
   volume: 0.7,
   crosshair: { style: 'cross', color: '#d8ffe8', gapScale: 1 },
   screenShake: true,
@@ -94,7 +97,23 @@ export function loadSettings(): Settings {
   s.aimSens = clampRange(s.aimSens, 0.2, 1.5)
   s.fov = clampRange(s.fov, 70, 110)
   s.volume = clampRange(s.volume, 0, 1)
+  s.inputMode = resolveInputMode(s.inputMode) // 非法值收敛为 auto
   return s
+}
+
+/** B-R3：操作方式归一化——非法值收敛为 'auto' */
+export function resolveInputMode(v: unknown): 'auto' | 'touch' | 'mouse' {
+  return v === 'touch' || v === 'mouse' ? v : 'auto'
+}
+
+/** B-R3.2：自动检测判定（指针类型/触点/URL 参数），作为 inputMode='auto' 的默认值 */
+export function detectTouchHint(
+  coarse: boolean,
+  hasTouchStart: boolean,
+  pathname: string,
+  hasTouchQuery: boolean,
+): boolean {
+  return coarse || hasTouchStart || pathname.includes('mobile') || hasTouchQuery
 }
 
 /** B-R2.5：数值收敛到 [lo, hi]，NaN 回中点 */

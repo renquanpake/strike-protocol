@@ -9,8 +9,6 @@ import { newWeaponInstance } from '../src/game/weapons'
 import { DEFAULT_SETTINGS, loadSettings } from '../src/ui/settings'
 import { matchLevel } from '../src/game/map/match'
 
-import { matchLevel } from '../src/game/map/match'
-
 const DT = 1 / CONFIG.tickRate
 
 function mkPrepped() {

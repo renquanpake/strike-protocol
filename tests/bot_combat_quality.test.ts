@@ -111,7 +111,6 @@ describe('A-R6 交战品质', () => {
     enemy.position = v3(1300, 0, -300) // 200u 近距
     enemy.yaw = Math.PI / 2
     enemy.health = 5000
-    enemy.healthMax = 5000
     for (let i = 1; i < 10; i++) {
       if (i === 5) continue
       state.players[i].position = v3(400, 0, 1500)

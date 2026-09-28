@@ -10,7 +10,6 @@ import { buyItem, GEAR_PRICES } from '../economy'
 import { inSmoke, throwGrenade } from './grenade'
 import type { EventBus } from '../../engine/eventbus'
 import { v3, type Vec3 } from '../../engine/math'
-import type { EventBus } from '../../engine/eventbus'
 import { emptyInput, type InputFrame } from '../../engine/input'
 
 export interface BotBrain {
@@ -506,7 +505,7 @@ export function updateBots(
         ) {
           const curW = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
           const def = curW ? WEAPONS[curW.defId] : null
-          if (def && curW.ammoMag > 0 && curW.reloadUntilTick === 0) {
+          if (def && curW && curW.ammoMag > 0 && curW.reloadUntilTick === 0) {
             if (def.auto) inp.fireHeld = true
             else if (tick >= brain.nextShotTick) {
               inp.fireQueued = true
