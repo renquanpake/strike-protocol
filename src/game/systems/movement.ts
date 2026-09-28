@@ -16,6 +16,14 @@ export function setMouseSensScale(v: number): void {
   mouseSensScale = v
 }
 
+/** B-R2.4：开镜灵敏度分离（默认关闭=1；开启时开镜状态按 aimSens 倍率缩放） */
+let aimSensScale = 1
+let aimSensSplit = false
+export function setAimSensScale(v: number, split: boolean): void {
+  aimSensScale = v
+  aimSensSplit = split
+}
+
 /**
  * 单个实体的每 tick 运动积分（人类与 Bot 共用，Bot 为合成输入）。
  * 顺序：视角 → 蹲/期望速 → 期望方向 → 摩擦 → 水平加速 → 梯子/跳跃/重力 → 碰撞(着地+吸收) → 坠落伤害 → 坠出地图。
@@ -37,8 +45,9 @@ export function updatePlayerMovement(
   const sensScale = aiming && zoomDef ? (zoomDef.sensScales?.[zoomStage - 1] ?? zoomDef.sensScale) : 1
 
   // 视角
-  p.yaw -= inp.mouseDX * CONFIG.mouseSens * mouseSensScale * sensScale
-  p.pitch -= inp.mouseDY * CONFIG.mouseSens * mouseSensScale * sensScale
+  const aimScale = aiming && aimSensSplit ? aimSensScale : 1
+  p.yaw -= inp.mouseDX * CONFIG.mouseSens * mouseSensScale * sensScale * aimScale
+  p.pitch -= inp.mouseDY * CONFIG.mouseSens * mouseSensScale * sensScale * aimScale
   const pitchLimit = Math.PI / 2 - 0.01
   p.pitch = Math.min(pitchLimit, Math.max(-pitchLimit, p.pitch))
 

@@ -4,7 +4,7 @@ import { matchLevel, type MapId } from './game/map/match'
 import { prepareLevel } from './game/physics/collision'
 import { buyItem } from './game/economy'
 import { buildNavGrid } from './game/map/navmesh'
-import { updatePlayerMovement, setMouseSensScale } from './game/systems/movement'
+import { updatePlayerMovement, setMouseSensScale, setAimSensScale } from './game/systems/movement'
 import { updateWeaponSystem, fireWeapon, viewForward, viewRight } from './game/systems/weapon'
 import { updateTargets, trainingTargets } from './game/systems/targets'
 import { updateRound } from './game/systems/round'
@@ -846,6 +846,8 @@ function applySettings(s: Settings): void {
   audio.setMasterVolume(s.volume)
   renderer.setFov(s.fov)
   setMouseSensScale(s.mouseSens)
+  setAimSensScale(s.aimSens, s.aimSensSplit)
+  if (touch) touch.lookScale = s.touchSens // B-R2.2 触摸视角灵敏度
   renderer.setQuality(s.quality)
   renderer.setDprCap(s.resolution)
   feedback?.applyCrosshairSettings(s.crosshair.style, s.crosshair.color, s.crosshair.gapScale)
@@ -1033,7 +1035,7 @@ async function init(): Promise<void> {
   })
   // 移动端暂停按钮（替代桌面 ESC/指针锁释放）
   if (touch) {
-    touch.lookScale = 1.0 + (settings.mouseSens - 1) * 0.5
+    touch.lookScale = settings.touchSens
     touch.onPause = () => {
       if (phase === 'running') {
         phase = 'paused'

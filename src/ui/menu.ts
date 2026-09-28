@@ -296,6 +296,9 @@ export class MenuUI {
 
     setCol.appendChild(this.mkEl('div', 'sp-sec', '操作'))
     setCol.appendChild(this.mkRange('鼠标灵敏度', 0.2, 3, 0.05, s.mouseSens, (v) => (s.mouseSens = v)))
+    setCol.appendChild(this.mkRange('触摸视角灵敏度', 0.2, 3, 0.05, s.touchSens, (v) => (s.touchSens = v)))
+    setCol.appendChild(this.mkToggle('开镜灵敏度分离', s.aimSensSplit, (v) => (s.aimSensSplit = v)))
+    setCol.appendChild(this.mkRange('开镜灵敏度', 0.2, 1.5, 0.05, s.aimSens, (v) => (s.aimSens = v)))
 
     setCol.appendChild(this.mkEl('div', 'sp-sec', '音频'))
     setCol.appendChild(this.mkRange('音量', 0, 1, 0.05, s.volume, (v) => (s.volume = v)))
@@ -417,6 +420,18 @@ export class MenuUI {
     panel.appendChild(row)
     resume.addEventListener('click', () => this.cb.onResume())
     toMenu.addEventListener('click', () => this.cb.onExit())
+    // B-R2.3 暂停菜单快捷灵敏度滑条（实时生效，免回主菜单）
+    const s = this.settingsForms
+    const qsec = this.mkEl('div', 'sp-sec', '灵敏度')
+    qsec.appendChild(this.mkRange('鼠标灵敏度', 0.2, 3, 0.05, s.mouseSens, (v) => {
+      s.mouseSens = v
+      this.applySettings()
+    }))
+    qsec.appendChild(this.mkRange('触摸视角灵敏度', 0.2, 3, 0.05, s.touchSens, (v) => {
+      s.touchSens = v
+      this.applySettings()
+    }))
+    panel.appendChild(qsec)
     this.root.appendChild(ov)
   }
 

@@ -16,6 +16,12 @@ export interface Settings {
   fov: number
   /** 0.2-3.0 倍率（CONFIG.mouseSens × 此值） */
   mouseSens: number
+  /** B-R2：0.2-3.0 触摸视角灵敏度（CONFIG.mouseSens 基准 × 此值 × 触点位移） */
+  touchSens: number
+  /** B-R2：开镜灵敏度分离开关 */
+  aimSensSplit: boolean
+  /** B-R2：0.2-1.5 开镜状态转速倍率（开镜灵敏度分离开启时生效） */
+  aimSens: number
   /** 0-1 主音量 */
   volume: number
   crosshair: CrosshairSettings
@@ -51,6 +57,9 @@ export const DEFAULT_BINDS: Record<string, string> = {
 export const DEFAULT_SETTINGS: Settings = {
   fov: CONFIG.fov, // 与 CONFIG.fov 单一来源（#3 数值不漂移）
   mouseSens: 1,
+  touchSens: 1,
+  aimSensSplit: false,
+  aimSens: 0.5,
   volume: 0.7,
   crosshair: { style: 'cross', color: '#d8ffe8', gapScale: 1 },
   screenShake: true,
@@ -73,12 +82,25 @@ export function loadSettings(): Settings {
   } catch {
     stored = {}
   }
-  return {
+  const s: Settings = {
     ...DEFAULT_SETTINGS,
     ...stored,
     crosshair: { ...DEFAULT_SETTINGS.crosshair, ...(stored.crosshair ?? {}) },
     binds: { ...DEFAULT_BINDS, ...(stored.binds ?? {}) },
   }
+  // B-R2.5：越界收敛到最近合法边界
+  s.mouseSens = clampRange(s.mouseSens, 0.2, 3)
+  s.touchSens = clampRange(s.touchSens, 0.2, 3)
+  s.aimSens = clampRange(s.aimSens, 0.2, 1.5)
+  s.fov = clampRange(s.fov, 70, 110)
+  s.volume = clampRange(s.volume, 0, 1)
+  return s
+}
+
+/** B-R2.5：数值收敛到 [lo, hi]，NaN 回中点 */
+function clampRange(v: number, lo: number, hi: number): number {
+  if (!Number.isFinite(v)) return (lo + hi) / 2
+  return Math.min(hi, Math.max(lo, v))
 }
 
 export function saveSettings(s: Settings): void {
