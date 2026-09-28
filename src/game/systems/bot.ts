@@ -46,6 +46,9 @@ export interface BotBrain {
   lastSoundTurnTick: number
   /** A-R2：待转至的声源朝向（rad，null=无；视觉目标出现时不覆盖） */
   soundYawTarget: number | null
+  /** A-R3：最后已知位置（目标丢视野时记录，按 profile.lkpSec 追击） */
+  lkp: { x: number; z: number } | null
+  lkpStartTick: number
 }
 
 export type BotTactic = 'rush' | 'default' | 'slow' | 'lurk' | 'aggro' | 'stack'
@@ -126,6 +129,8 @@ export function createBotContext(
         lastRadioTick: -99999,
         lastSoundTurnTick: -99999,
         soundYawTarget: null,
+        lkp: null,
+        lkpStartTick: 0,
       })
     }
   }
@@ -262,7 +267,20 @@ export function updateBots(
     }
 
     const enemy = perceiveEnemy(state, level, p, brain, profile)
-    if (enemy === null) brain.perceivedId = null
+    if (enemy === null) {
+      // A-R3：目标丢视野时记录最后已知位置（难度档位开启追击中）
+      if (brain.perceivedId != null && profile.lkpSec > 0) {
+        const lost = state.players[brain.perceivedId]
+        if (lost && lost.alive) {
+          brain.lkp = { x: lost.position.x, z: lost.position.z }
+          brain.lkpStartTick = tick
+        }
+      }
+      brain.perceivedId = null
+      brain.soundYawTarget = null // 失去视觉目标后听觉转向可接管
+    } else {
+      brain.lkp = null // A-R3：视觉重获即清除 LKP
+    }
 
     // A-R2 听觉感知：枪声（600u）/脚步（300u）引起转向；5s 防抖；低档无听觉。
     // 有视觉目标时听觉转向让位（视觉优先）。
@@ -408,7 +426,41 @@ export function updateBots(
         const dyaw = angleDiff(desiredYaw, p.yaw)
         const turnCap = 3 * dt
         p.yaw += Math.max(-turnCap, Math.min(turnCap, dyaw))
+      } else if (
+        profile.lkpSec > 0 &&
+        brain.lkp &&
+        tick - brain.lkpStartTick <= profile.lkpSec * CONFIG.tickRate
+      ) {
+        // A-R3 LKP 追击：astar 逼近最后已知位置 + 0.5s 周期 ±45° 扫视（R3.2）
+        const lkpTarget = v3(brain.lkp.x, p.position.y, brain.lkp.z)
+        if (brain.path === null || tick >= brain.replanAt) {
+          brain.path = astar(nav, p.position, lkpTarget)
+          brain.replanAt = tick + Math.round(2 * CONFIG.tickRate)
+        }
+        const moveDir = nextWaypointDir(p.position, brain.path)
+        if (moveDir) inp = moveInput(p, moveDir, inp, dt)
+        const baseYaw = Math.atan2(-(brain.lkp.x - p.position.x), -(brain.lkp.z - p.position.z))
+        const phase = Math.floor((tick - brain.lkpStartTick) / 32) % 3
+        const scanYaw = baseYaw + (phase === 0 ? 0 : phase === 1 ? Math.PI / 4 : -Math.PI / 4)
+        const dyaw = angleDiff(scanYaw, p.yaw)
+        p.yaw += Math.max(-3 * dt, Math.min(3 * dt, dyaw))
+        // R3.4：LKP 在烟雾内时对 LKP 持续开火 1.5s（补烟）
+        if (
+          tick - brain.lkpStartTick <= Math.round(1.5 * CONFIG.tickRate) &&
+          inSmoke(state, brain.lkp.x, p.position.y + 40, brain.lkp.z)
+        ) {
+          const curW = p.activeSlot === 0 ? p.weapons.primary : p.weapons.secondary
+          const def = curW ? WEAPONS[curW.defId] : null
+          if (def && curW.ammoMag > 0 && curW.reloadUntilTick === 0) {
+            if (def.auto) inp.fireHeld = true
+            else if (tick >= brain.nextShotTick) {
+              inp.fireQueued = true
+              brain.nextShotTick = tick + Math.round((def.fireRateMs * 1.15 / 1000) * CONFIG.tickRate)
+            }
+          }
+        }
       } else {
+        if (brain.lkp) brain.lkp = null // R3.3：追击超时/未启用 → 回归战术目标
         if (brain.path === null || tick >= brain.replanAt) {
           brain.path = astar(nav, p.position, brain.objective)
           brain.replanAt = tick + Math.round(2 * CONFIG.tickRate)
