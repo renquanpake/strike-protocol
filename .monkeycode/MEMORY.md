@@ -53,7 +53,7 @@
 - Context: Agent 完成 44 项 backlog 全量开发
 - Category: 构建方法
 - Instructions:
-   - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**；2026-09-26 P0 差距修复批次（手感/武器/规则/HUD/Bot，commit a08c047）后 111 → **118**；P1+美术批次（渲染 PBR/ACES/IBL + 法线 + 烟雾 + bot 预投 + MVP + 确定性/预投单测，commit ee04da3）后 118 → **121**；改正书 G1-G4 后 121 → **134**（commit e18e59e）；de_costa 新图路由回归 +6 后 134 → **140**（`npx vitest run` 全绿为验收线，17 个测试文件）。
+   - 完整化后测试基线 75 → **79**；2026-09-23 审计缺陷修复 + 补 11 个规划单测点 + 玩家对抗用例后 79 → **111**；2026-09-26 P0 差距修复批次（手感/武器/规则/HUD/Bot，commit a08c047）后 111 → **118**；P1+美术批次（渲染 PBR/ACES/IBL + 法线 + 烟雾 + bot 预投 + MVP + 确定性/预投单测，commit ee04da3）后 118 → **121**；改正书 G1-G4 后 121 → **134**（commit e18e59e）；de_costa 新图路由回归 +6 后 134 → **140**；优化书批次一/二/三全量施工后 140 → **180**（29 个测试文件，`npx vitest run` 全绿为验收线，只增不减；`npx tsc --noEmit` 一并通过）。
    - 已装 `vite-plugin-pwa@0.21`（devDependency）：`npm run build` 会生成 `dist/sw.js`+workbox，precache 174 项（含 45 ogg CC0 音效 + plaster/tile 等新贴图，总包 ~40.6MB）；dev 模式 PWA 不生效。
    - 渲染管线已升级 PBR：ACESFilmicToneMapping + sRGB + RoomEnvironment PMREM IBL + 8×PointLight 动态光池（爆炸/闪光/枪口，`renderer.addFlashLight`/`updateDynLights`）+ 法线贴图（`{key}_n` 键）+ 阴影 2048/4096 分档。人物/地图用 MeshStandardMaterial（IBL 下不发黑）。
    - 地图现为 4 张：`de_sahara`（默认）/`de_plaza`（地中海）/`de_costa`（海滨，G5）/`training`（训练场），注册在 `src/game/map/match.ts` 的 `MAP_BUILDERS`；新增图需在该表登记 + `CONFIG.SKY_PALETTES`（src/game/config.ts，天空/雾/太阳按图切换）+ `src/ui/menu.ts` MAP_CARD + routes.test.ts 加路由回归。
@@ -78,6 +78,15 @@
   - 任何新任务开工前先对照改正书：与其冲突的旧 BACKLOG 条目以改正书为准；甲部 P0（V1 枪模、V2 音效）未完成前不启动新玩法功能（G1/G2 可并行，文件域不同）。
    - 改正项完成一项就在改正书「完成记录」表打勾并注明 commit。
 
+### [排障 & 调试: headless 菜单走查的两个坑（字距空格 / 暂停按钮是 div）]
+- Date: 2026-09-28
+- Context: 用 puppeteer 验收优化书批次三（触控布局预设/暂停菜单滑条/操作方式）时
+- Category: 排障 & 调试
+- Instructions:
+  - UI 文案经 `letter-spacing` 渲染后 `innerText` 里是「开 镜 灵 敏 度」带空格，直接 `includes('开镜灵敏度')` 恒 MISS。断言前先 `document.body.innerText.replace(/\s+/g,'')` 归一化再匹配。
+  - 触控暂停按钮是 `div.tb-pause`（非 `<button>`），`$$('button')` 匹配不到；对局中点暂停要 `document.querySelector('.tb-pause').click()`。
+  - 回合 0（购买阶段）买菜单默认展开会盖住暂停面板，headless 里「点暂停→断言暂停菜单」不稳定；功能有无以源码（menu.ts 行号）+ vitest 单测为准，headless 截图只作布局坐标辅助。
+
 ### [排障 & 调试: headless 截图审计三个坑（自动暂停 / shader 静默失败 / 高画质丢上下文）]
 - Date: 2026-09-27
 - Context: 用 puppeteer+swiftshader 验收 V3/V6/G5（天空/材质/新图）时踩到
@@ -94,5 +103,6 @@
 - Category: 工作流与协作
 - Instructions:
   - 新功能先出 EARS 需求规划并向用户提关键决策问题（每轮最多 3 个），用户确认后才可施工；用户未放行前只写文档。
-  - 全局优化总纲在 `.monkeycode/docs/OPTIMIZATION.md`（优化书，自包含可读，含背景/根因/需求/批次表）；细版 EARS 需求在 `.monkeycode/specs/{feature}/requirements.md`，权威版以优化书为准。
-  - 优化书与改正书配合：改正书记录已完成审计修正，优化书是下一轮施工依据；已确认规划：Bot 大修（视觉两步走、智能一批全做、难度偏硬核）与输入/移动端（预设+编辑器、灵敏度四项、横屏提示+可锁）。
+   - 全局优化总纲在 `.monkeycode/docs/OPTIMIZATION.md`（优化书，自包含可读，含背景/根因/需求/批次表）；细版 EARS 需求在 `.monkeycode/specs/{feature}/requirements.md`，权威版以优化书为准。
+   - 优化书与改正书配合：改正书记录已完成审计修正，优化书是下一轮施工依据；已确认规划：Bot 大修（视觉两步走、智能一批全做、难度偏硬核）与输入/移动端（预设+编辑器、灵敏度四项、横屏提示+可锁）。
+   - 2026-09-28 施工完成：批次一/二/三全部落地（commit cb2e4c5→7552fe9，共 13 笔），优化书第 4 章「完成记录」表已补全并入库（8f89a74 起）；测试基线 140→180。

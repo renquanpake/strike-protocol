@@ -216,6 +216,18 @@ T 阵营队友正常（蒙皮模型 + 沙色贴图），所以现象是「队友
 | 批次一-2（B-R1.1/R1.2 触控布局） | 28d5491 | 2026-09-28 | TOUCH_LAYOUT 单源化（16 键），修 E/蹲/换弹与雷行重叠，买丢键移左上；零重叠+越界单测（145→148）；390×360 headless 截图验收 |
 | 批次一-3（B-R4.1-4.5 横屏） | 9c8b514 | 2026-09-28 | 竖屏旋转遮罩+全屏锁定横屏按钮+轮询门控（竖屏返回空帧，横屏 1 帧恢复）；isPortrait 单测（148→150）；headless 390×844→844×390 验收 |
 | 批次一-4（太阳方块+favicon） | 4bcdb88 | 2026-09-28 | 太阳 billboard 径向渐变贴图；index.html icon 链 |
+| 优化书日志提交 | 8f89a74 | 2026-09-28 | 本完成记录表首次入库 |
+| 批次二-1（A-R7 难度表重校） | 6f1e76f | 2026-09-28 | BOT_DIFFICULTY 全能力档位（hear/lkp/cover/anchor/burst/headBias/radioHear），硬核校准 D5 反应 [350,500]ms / D10 [140,220]；修「感知驻停」缺陷（反应窗口期 bot 走位漂出视野锥无法交战）；bot_difficulty +6（150→156） |
+| 批次二-2（A-R2 听觉感知） | e99fe8a | 2026-09-28 | BotSound/heard 队列，枪声 600u / 脚步 300u 转向 + 5s 防抖（lastSoundTurnTick），蹲伏概率衰减（0.004 vs 0.03），heardSound radio 报点（eventbus union + strings + feedback）；bot_hearing +4（156→160） |
+| 批次二-3（A-R3 LKP 目标记忆） | 7c6ef10 | 2026-09-28 | brain.lkp/lkpStartTick，丢视野记录、astar 逼近 + ±45° 扫视（3 段/32 tick）、烟雾 1.5s 补烟、重感知/超时清空；测试双方 health=5000 防互杀；bot_lkp +3（160→163） |
+| 批次二-4（A-R4 掩体生存） | 2565134 | 2026-09-28 | findCover 12 向×3 档 LOS 遮挡搜索，applyCover 残血≤30/换弹转移（每场限 1 次 coverUsed），到位 2s 探出 + 藏身期抑火；bot_cover +4（163→167） |
+| 批次二-5（A-R5 防守架点） | 255ac52 | 2026-09-28 | holdSinceTick/holdSwapped/supportingShot，40s 无接触换位（sites[brain.id % len]），800u 枪声 60% 中点支援，freeze/engaging 重置额度；bot_anchor +3（167→170） |
+| 批次二-6（A-R6 交战品质） | b126f9a | 2026-09-28 | planBurst 纯函数（2-4 发点射 0.3-0.5s 间隔，修 off-by-one），dist>300 点射 / 近距全自动 + ≤200u 走位减半，弹匣≤30% 且 3s 无敌换弹（lastSeenTick）；bot_combat_quality +3（170→173） |
+| 批次三-1（B-R2 灵敏度四项） | 99cf284 | 2026-09-28 | settings touchSens/aimSens/aimSensSplit + clampRange 收敛，movement.setAimSensScale(v,split)，暂停菜单快捷滑条（applySettings 实时）；settings_sens +3（173→176） |
+| 批次三-2（B-R3 统一入口） | 40b9eac | 2026-09-28 | settings.inputMode(auto/touch/mouse) + resolveInputMode/detectTouchHint，main activeTouch()/setInputMode，菜单「操作方式」下拉 + 暂停菜单 3 键热切换；帧选择 `activeTouch()?touch:input`；tsc 通过（176 保持） |
+| 批次三-3（B-R1.3/1.4/1.5 布局预设+安全区+长按编辑器） | 7552fe9 | 2026-09-28 | 纯函数 layoutStyle（镜像/偏移/安全区 4px），applyLayout 新签名，长按 0.6s 编辑器（拖动写 touchOffsets→saveSettings→relayout + 取消钮），buy/drop 上边距 24，菜单「触控布局」下拉，applySettings 即时 relayout；touch_layout_style +4（176→180），tsc 通过 |
+
+**全量收尾**：2026-09-28 `npx vitest run` 180 用例全绿（基线 140→180），`npx tsc --noEmit` 通过。批次一/二/三 全部落地。
 
 ---
 
