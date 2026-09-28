@@ -802,9 +802,15 @@ export class GameRenderer {
       return
     }
     const group = new THREE.Group()
-    const camoMat = new THREE.MeshLambertMaterial({ map: camo })
-    const skinMat = new THREE.MeshLambertMaterial({ color: 0x8a6b52 })
-    const accentMat = new THREE.MeshLambertMaterial({ color: accent })
+    // R1a：色块人形材质升级 PBR（Lambert 不吃 IBL，深色贴图在 ACES 下近黑）
+    const camoMat = new THREE.MeshStandardMaterial({ map: camo, roughness: 0.9, metalness: 0 })
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0x8a6b52, roughness: 0.9 })
+    const accentMat = new THREE.MeshStandardMaterial({
+      color: accent,
+      roughness: 0.6,
+      emissive: accent,
+      emissiveIntensity: 0.12,
+    })
     const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number): THREE.Mesh => {
       const m = new THREE.Mesh(geo, mat)
       m.position.set(x, y, z)

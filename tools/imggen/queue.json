@@ -118,5 +118,9 @@
   {
     "file": "tile_n",
     "prompt": "Seamless tileable PBR normal map, tangent space, OpenGL green-up convention, flat base color #8080ff, subtle low-contrast surface relief only. Subject: Mediterranean stone tile plaza floor, raised stone tiles with recessed thin grout lines, light surface weathering. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, uniform lighting, no color tint, no specular, no shadows, no perspective, only gentle blue-purple normal detail on neutral #8080ff base, high detail 4k texture."
+  },
+  {
+    "file": "bot_ct",
+    "prompt": "Seamless tileable texture, PBR base color albedo map only, flat diffuse color, no shading, no specular, no shadows. Subject: modern police tactical uniform fabric in medium-bright police blue #5f8fc9, subtle pixelated camo blotches in darker navy #28446e, two thin light blue horizontal stripes #dee4ff, fine woven fabric grain. Bright readable colors, matte finish. Strict constraints: perfectly seamless repeating tile, edges wrap seamlessly, top-down orthographic flat view, absolutely no objects, no perspective, no depth, no vignette, even flat lighting, high detail 4k texture."
   }
 ]

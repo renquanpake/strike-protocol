@@ -105,6 +105,24 @@ export function sandTexture(): THREE.Texture {
   return tex
 }
 
+/** CT 警员制服（R1a：替换深色金属贴图，警蓝基底+迷彩+亮条，ACES 管线下可读） */
+export function ctUniformTexture(): THREE.Texture {
+  const [c, ctx] = makeCanvas()
+  noiseFill(ctx, 256, '#5f8fc9', 9000, 0.18)
+  ctx.fillStyle = 'rgba(40,68,112,0.5)'
+  for (let i = 0; i < 14; i++) {
+    ctx.beginPath()
+    ctx.ellipse(Math.random() * 256, Math.random() * 256, 14 + Math.random() * 22, 8 + Math.random() * 12, Math.random() * Math.PI, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.fillStyle = 'rgba(222,236,255,0.5)'
+  ctx.fillRect(0, 62, 256, 12)
+  ctx.fillRect(0, 184, 256, 12)
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  return tex
+}
+
 export function ladderTexture(): THREE.Texture {
   const [c, ctx] = makeCanvas()
   ctx.fillStyle = '#d8c25a'
@@ -406,37 +424,39 @@ async function composeMegaTexture(url: string, seed: number): Promise<THREE.Text
   return tex
 }
 
+/** 阵营/枪身贴图 albedo 键与回退工厂表（模块级：单测可验证 CT/T 纹理源分离，R1a 回归） */
+export const albedoKeys = [
+  'concrete', 'wood', 'sand', 'metal',
+  'gun_metal', 'gun_wood', 'gun_steel', 'gun_sleeve',
+  'bot_ct', 'bot_t',
+  'stone', 'roof', 'sandbag', 'rusted',
+  'm4_basecolor', 'm4_roughness',
+  'plaster', 'tile',
+] as const
+export const albedoFallback: Record<(typeof albedoKeys)[number], () => THREE.Texture> = {
+  concrete: concreteTexture,
+  wood: woodTexture,
+  sand: sandTexture,
+  metal: metalTexture,
+  gun_metal: () => metalTexture(),
+  gun_wood: () => woodTexture(),
+  gun_steel: () => metalTexture(),
+  gun_sleeve: () => sandTexture(),
+  bot_ct: () => ctUniformTexture(),
+  bot_t: () => sandTexture(),
+  stone: stoneTexture,
+  roof: roofTexture,
+  sandbag: sandbagTexture,
+  rusted: rustedTexture,
+  m4_basecolor: () => woodTexture(),
+  m4_roughness: () => metalTexture(),
+  plaster: plasterTexture,
+  tile: tileTexture,
+}
+
 /** 异步把生图表面贴图覆盖进 map（保留 ladder/glass 的 canvas 版），并补枪身/阵营键；onStep 报告进度。
  * PBR 升级：法线贴图以 `{key}_n` 键加载（缺失时静默跳过，不影响 albedo）。 */
 export async function loadImageTextures(map: TextureMap, onStep?: (done: number, total: number) => void): Promise<void> {
-  const albedoKeys = [
-    'concrete', 'wood', 'sand', 'metal',
-    'gun_metal', 'gun_wood', 'gun_steel', 'gun_sleeve',
-    'bot_ct', 'bot_t',
-    'stone', 'roof', 'sandbag', 'rusted',
-    'm4_basecolor', 'm4_roughness',
-    'plaster', 'tile',
-  ] as const
-  const albedoFallback: Record<(typeof albedoKeys)[number], () => THREE.Texture> = {
-    concrete: concreteTexture,
-    wood: woodTexture,
-    sand: sandTexture,
-    metal: metalTexture,
-    gun_metal: () => metalTexture(),
-    gun_wood: () => woodTexture(),
-    gun_steel: () => metalTexture(),
-    gun_sleeve: () => sandTexture(),
-    bot_ct: () => metalTexture(),
-    bot_t: () => sandTexture(),
-    stone: stoneTexture,
-    roof: roofTexture,
-    sandbag: sandbagTexture,
-    rusted: rustedTexture,
-    m4_basecolor: () => woodTexture(),
-    m4_roughness: () => metalTexture(),
-    plaster: plasterTexture,
-    tile: tileTexture,
-  }
   const jobs: Array<Promise<THREE.Texture>> = albedoKeys.map((k) => {
     const url = `/textures/${k}.png`
     const seed = MEGA_SEEDS[k]
