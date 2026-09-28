@@ -106,3 +106,14 @@
    - 全局优化总纲在 `.monkeycode/docs/OPTIMIZATION.md`（优化书，自包含可读，含背景/根因/需求/批次表）；细版 EARS 需求在 `.monkeycode/specs/{feature}/requirements.md`，权威版以优化书为准。
    - 优化书与改正书配合：改正书记录已完成审计修正，优化书是下一轮施工依据；已确认规划：Bot 大修（视觉两步走、智能一批全做、难度偏硬核）与输入/移动端（预设+编辑器、灵敏度四项、横屏提示+可锁）。
    - 2026-09-28 施工完成：批次一/二/三全部落地（commit cb2e4c5→7552fe9，共 13 笔），优化书第 4 章「完成记录」表已补全并入库（8f89a74 起）；测试基线 140→180。
+
+### [运营 & 部署: GitHub Pages 线上地址与发布流程]
+- Date: 2026-09-28
+- Context: 用户要求部署到 GitHub 供手机实测；仓库 renquanpake/strike-protocol 已改 public
+- Category: 运营 & 部署
+- Instructions:
+  - 线上地址：https://renquanpake.github.io/strike-protocol/ （legacy Pages，源分支 gh-pages，PWA 可 Add to Home Screen 全屏运行）。
+  - 发布流程：改代码 → `git push origin master` → `npx vite build --base=/strike-protocol/` → 在 /tmp 独立 git 仓库里 `cp -r dist/* . && git add -A && git commit && git push origin gh-pages`（临时仓库需先 `git config user.name/user.email`，主仓库身份是 local 配置不在全局）。Pages 自动部署，约 1-2 分钟变为 built。
+  - vite.config 的 PWA manifest/navigateFallback 已是相对路径（commit ab4f1ad），本地 dev 与 Pages 子路径通用；构建必须带 `--base=/strike-protocol/`。
+  - 43MB 资源（模型/贴图/音效）走 GitHub raw 分发，手机首次加载约 1 分钟，PWA precache 176 项后离线可玩（>4MB 单文件不入 precache）。
+  - 改仓库可见性/Pages 配置需 GitHub API：`/root/.netrc` 内有 github.com 凭证（token 不得展示），`curl -H "Authorization: Bearer $TOKEN"` 调用；Pages 建站点用 `{"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}`。
