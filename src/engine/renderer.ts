@@ -33,7 +33,7 @@ const TARGET_PART_COLORS = [0xc0392b, 0xa93226, 0xa93226, 0x7b241c, 0x641e16]
  *  强识别交给地面阵营光环 + 雷达点色 + 自发光 glow。键 = 阵营 accent */
 const CHAR_TINTS: Record<number, { body: number; head: number; glow: number }> = {
   0xc8862a: { body: 0xf0a038, head: 0x3a2a18, glow: 0xff7a1a }, // T 匪：高饱和橙砂服 + 深褐头巾
-  0x3f6fae: { body: 0x5aa0ff, head: 0x16283f, glow: 0x2f6fd8 }, // CT 警：高饱和冷蓝警服 + 深蓝警盔
+  0x3f6fae: { body: 0x8fd0ff, head: 0xb8d4f0, glow: 0x66aaff }, // CT 警：亮警蓝装甲 + 浅蓝头盔（R1b：根治暗色 tint 发黑）
 }
 
 export class GameRenderer {

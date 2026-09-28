@@ -65,10 +65,10 @@ ground.rotation.x = -Math.PI / 2
 ground.receiveShadow = true
 scene.add(ground)
 
-// 阵营配色（与游戏 renderer 一致）：身体纯色 mannequin、头部中性提亮、眼睛保留
+// 阵营配色（与游戏 renderer 一致）：R1b 后 CT 为亮警蓝
 const TEAM = {
   T: { body: 0xff9440, head: 0xd8d0c4, glow: 0xff7a1a },
-  CT: { body: 0x5f8ff0, head: 0xd8d0c4, glow: 0x2f5fd8 },
+  CT: { body: 0x8fd0ff, head: 0xb8d4f0, glow: 0x66aaff },
 }
 function applyTeam(root, team) {
   const t = TEAM[team]
@@ -102,12 +102,11 @@ function applyTeam(root, team) {
 
 const loader = new GLTFLoader()
 const meta = document.getElementById('meta')
-try {
-  const gltf = await loader.loadAsync('/models/soldier.glb')
+// R1b：T 用 character.glb（T 模板），CT 用 ct_soldier.glb（CT 独立模板），各自归一化
+async function loadTeam(url, team, x, rotY) {
+  const gltf = await loader.loadAsync(url)
   gltf.scene.traverse((o) => { if (o.name === 'Armature') o.quaternion.identity() })
-  applyTeam(gltf.scene, 'T')
-
-  // 骨骼归一化：按骨骼极端点实测站立高度 → 140u（与游戏玩家等高）
+  applyTeam(gltf.scene, team)
   gltf.scene.updateWorldMatrix(true, true)
   let miny = Infinity, maxy = -Infinity
   gltf.scene.traverse((o) => {
@@ -120,25 +119,25 @@ try {
   const scale = 140 / Math.max(maxy - miny, 1e-4)
   gltf.scene.scale.setScalar(scale)
   gltf.scene.position.y = -miny * scale
-  gltf.scene.rotation.y = Math.PI / 6
-
-  const ct = skeletonClone(gltf.scene)
-  ct.position.x = 110
-  ct.rotation.y = -Math.PI / 4
-  applyTeam(ct, 'CT')
-
-  scene.add(gltf.scene, ct)
-  const pickClip = (...names) => gltf.animations.find((a) => names.includes(a.name))
-  const idleC = pickClip('Idle', 'Idle_Loop', 'idle')
-  const runC = pickClip('Run', 'Jog_Fwd_Loop', 'Walk')
-  const mT = new THREE.AnimationMixer(gltf.scene)
+  gltf.scene.position.x = x
+  gltf.scene.rotation.y = rotY
+  scene.add(gltf.scene)
+  return gltf
+}
+try {
+  const tGltf = await loadTeam('/models/character.glb', 'T', -110, Math.PI / 6)
+  const cGltf = await loadTeam('/models/ct_soldier.glb', 'CT', 110, -Math.PI / 4)
+  const pickClip = (g, ...names) => g.animations.find((a) => names.includes(a.name))
+  const idleC = pickClip(tGltf, 'Idle', 'Idle_Loop', 'idle')
+  const runC = pickClip(cGltf, 'Run', 'Jog_Fwd_Loop', 'Walk', 'Jog')
+  const mT = new THREE.AnimationMixer(tGltf.scene)
   if (idleC) mT.clipAction(idleC).play()
-  const mC = new THREE.AnimationMixer(ct)
+  const mC = new THREE.AnimationMixer(cGltf.scene)
   if (runC) mC.clipAction(runC).play()
-  const mDeath = new THREE.AnimationMixer(ct)
-  const deathClip = pickClip('Death01', 'Death', 'dead')
+  const mDeath = new THREE.AnimationMixer(cGltf.scene)
+  const deathClip = pickClip(cGltf, 'Death01', 'Death', 'dead')
 
-  meta.textContent = `Vanguard 战士 · scale=${scale.toFixed(1)} · 站立≈140u · 动画 ${gltf.animations.map((a) => a.name).join('/')}`
+  meta.textContent = `character.glb(T) × ct_soldier.glb(CT) · 站立≈140u · T 动画 ${tGltf.animations.length} / CT 动画 ${cGltf.animations.length}`
 
   const cam = new THREE.PerspectiveCamera(55, 1.6, 1, 5000)
   function setView(name) {
