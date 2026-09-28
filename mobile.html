@@ -62,15 +62,11 @@
           display: flex;
         }
       }
-      /* 小屏压缩 HUD 字号，避免与按键重叠 */
+      /* 小屏压缩 HUD 字号（小地图缩放统一由 hud.css 媒体查询处理） */
       @media (max-height: 500px) {
         #status,
         #round {
           font-size: 10px;
-        }
-        #radar {
-          transform: scale(0.7);
-          transform-origin: top right;
         }
       }
     </style>

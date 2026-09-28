@@ -367,6 +367,13 @@ body.debug-on #keys {
   border: 1px solid rgba(140, 200, 255, 0.3);
   border-radius: 3px;
 }
+/* 短屏（手机横屏）自动缩小小地图，避免遮挡开火键等触控层 */
+@media (max-height: 500px) {
+  #radar { transform: scale(0.6); transform-origin: top right; }
+}
+@media (max-height: 400px) {
+  #radar { transform: scale(0.5); transform-origin: top right; }
+}
 #blind {
   position: absolute;
   inset: 0;

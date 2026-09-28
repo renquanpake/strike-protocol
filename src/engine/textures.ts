@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { assetUrl } from './asset'
 
 /** 程序化材质贴图：全部 Canvas 生成，零外部资源 */
 
@@ -458,7 +459,7 @@ export const albedoFallback: Record<(typeof albedoKeys)[number], () => THREE.Tex
  * PBR 升级：法线贴图以 `{key}_n` 键加载（缺失时静默跳过，不影响 albedo）。 */
 export async function loadImageTextures(map: TextureMap, onStep?: (done: number, total: number) => void): Promise<void> {
   const jobs: Array<Promise<THREE.Texture>> = albedoKeys.map((k) => {
-    const url = `/textures/${k}.png`
+    const url = assetUrl(`textures/${k}.png`)
     const seed = MEGA_SEEDS[k]
     // V3：大面积表面走 2048 双层平铺合成（失败回退普通加载/程序化）
     return seed
@@ -471,7 +472,7 @@ export async function loadImageTextures(map: TextureMap, onStep?: (done: number,
     ...normalKeys.map((k) =>
       new Promise<THREE.Texture | null>((resolve) => {
         new THREE.TextureLoader().load(
-          `/textures/${k}_n.png`,
+          assetUrl(`textures/${k}_n.png`),
           (tex) => {
             tex.colorSpace = THREE.NoColorSpace
             tex.wrapS = tex.wrapT = THREE.RepeatWrapping
@@ -491,7 +492,7 @@ export async function loadImageTextures(map: TextureMap, onStep?: (done: number,
   jobs.push(
     new Promise<THREE.Texture | null>((resolve) => {
       new THREE.TextureLoader().load(
-        '/textures/m4_normal.png',
+        assetUrl('textures/m4_normal.png'),
         (tex) => {
           tex.colorSpace = THREE.NoColorSpace
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping

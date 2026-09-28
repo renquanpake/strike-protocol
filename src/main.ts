@@ -1,4 +1,5 @@
 import { CONFIG } from './game/config'
+import { assetUrl } from './engine/asset'
 import { createGameState, type GameState } from './game/state'
 import { matchLevel, type MapId } from './game/map/match'
 import { prepareLevel } from './game/physics/collision'
@@ -107,6 +108,13 @@ audio.setInitialVolume(settings.volume)
 const unlockAudio = (): void => audio.init()
 window.addEventListener('pointerdown', unlockAudio, { once: false })
 window.addEventListener('keydown', unlockAudio, { once: false })
+// M 键：小地图快速开关（持久化到设置）
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.repeat || e.key !== 'm' && e.key !== 'M') return
+  settings.showMinimap = !settings.showMinimap
+  saveSettings(settings)
+  feedback?.setMinimapVisible(settings.showMinimap)
+})
 
 const events = new EventBus()
 
@@ -941,7 +949,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
   // V1：m4.glb 灰模补 PBR 贴图（imggen 生成 baseColor/normal/roughness）
   void viewmodel.upgradeWithGLB(
     'rifle',
-    '/models/m4.glb',
+    assetUrl('models/m4.glb'),
     38,
     -0.28,
     { map: textures.m4_basecolor, normal: textures.m4_normal, roughness: textures.m4_roughness },
@@ -1034,12 +1042,12 @@ async function init(): Promise<void> {
   setLoadProgress(0.55, '加载人物模型…')
   let charDegraded = false
   const chH = CONFIG.charVisualHeight
-  if (!(await renderer.loadCharacterModel('/models/character.glb', 'T', chH))) {
+  if (!(await renderer.loadCharacterModel(assetUrl('models/character.glb'), 'T', chH))) {
     charDegraded = true
-    await renderer.loadCharacterModel('/models/soldier.glb', 'T', chH)
+    await renderer.loadCharacterModel(assetUrl('models/soldier.glb'), 'T', chH)
   }
   // #30 阵营差异化：CT 独立模板（缺则回退共享 T 模板，不影响可用性）
-  await renderer.loadCharacterModel('/models/ct_soldier.glb', 'CT', chH).catch(() => false)
+  await renderer.loadCharacterModel(assetUrl('models/ct_soldier.glb'), 'CT', chH).catch(() => false)
   setLoadProgress(0.8, charDegraded ? '人物模型已降级（回退资产）' : '构建对局世界…')
   feedback = new Feedback(hudRoot, radarCanvas)
   // 首局：直接进主菜单，背景先渲染一张默认地图
@@ -1153,9 +1161,9 @@ if (import.meta.env.DEV) {
 // 印花池（对局重建时创建）
 async function buildDecalPools(): Promise<void> {
   const [bulletTex, scorchTex, shotTex] = await Promise.all([
-    makeDecalTexture('/textures/decal_bullet.png').catch(() => null),
-    makeDecalTexture('/textures/decal_scorch.png').catch(() => null),
-    makeDecalTexture('/textures/decal_shot.png').catch(() => null),
+    makeDecalTexture(assetUrl('textures/decal_bullet.png')).catch(() => null),
+    makeDecalTexture(assetUrl('textures/decal_scorch.png')).catch(() => null),
+    makeDecalTexture(assetUrl('textures/decal_shot.png')).catch(() => null),
   ])
   if (bulletTex) bulletPool = renderer.addDecalPool(6, bulletTex, 48)
   if (scorchTex) scorchPool = renderer.addDecalPool(26, scorchTex, 16)

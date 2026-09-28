@@ -292,7 +292,11 @@ export class MenuUI {
     setCol.appendChild(qualSel)
     setCol.appendChild(resoSel)
     setCol.appendChild(this.mkToggle('屏幕震动', s.screenShake, (v) => (s.screenShake = v)))
-    setCol.appendChild(this.mkToggle('显示小地图', s.showMinimap, (v) => (s.showMinimap = v)))
+    setCol.appendChild(this.mkToggle('显示小地图', s.showMinimap, (v) => {
+      s.showMinimap = v
+      saveSettings(s)
+      this.applySettings()
+    }))
     setCol.appendChild(this.mkToggle('调试面板', s.showDebug, (v) => (s.showDebug = v)))
 
     setCol.appendChild(this.mkEl('div', 'sp-sec', '操作'))
@@ -450,6 +454,17 @@ export class MenuUI {
       this.applySettings()
     }))
     panel.appendChild(qsec)
+    // 暂停菜单快捷小地图开关（M 键等效；触屏用户免进设置面板）
+    const mmRow = this.mkEl('div', '', '小地图')
+    const mmBtn = this.mkEl('button', 'sp-btn', s.showMinimap ? '开' : '关')
+    mmBtn.addEventListener('click', () => {
+      s.showMinimap = !s.showMinimap
+      saveSettings(s)
+      this.applySettings()
+      mmBtn.textContent = s.showMinimap ? '开' : '关'
+    })
+    mmRow.appendChild(mmBtn)
+    panel.appendChild(mmRow)
     // B-R3.3 暂停菜单切换操作方式（即时重建输入层）
     const imRow = this.mkEl('div', '', '操作方式')
     const modes: { label: string; m: Settings['inputMode'] }[] = [

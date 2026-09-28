@@ -11,8 +11,9 @@
 
 type Ctx = AudioContext
 
-/** 采样清单：逻辑键 → CC0 ogg 文件（public/sounds/） */
-const SAMPLE_FILES: Record<string, string[]> = {
+import { assetUrl } from './asset'
+
+/** 采样清单：逻辑键 → CC0 ogg 文件（public/sounds/） */const SAMPLE_FILES: Record<string, string[]> = {
   step_sand: ['footstep_grass_000.ogg', 'footstep_grass_001.ogg', 'footstep_grass_002.ogg', 'footstep_grass_003.ogg', 'footstep_grass_004.ogg'],
   step_concrete: ['footstep_concrete_000.ogg', 'footstep_concrete_001.ogg', 'footstep_concrete_002.ogg', 'footstep_concrete_003.ogg', 'footstep_concrete_004.ogg'],
   step_wood: ['footstep_wood_000.ogg', 'footstep_wood_001.ogg', 'footstep_wood_002.ogg', 'footstep_wood_003.ogg', 'footstep_wood_004.ogg'],
@@ -189,7 +190,7 @@ export class AudioEngine {
         const variants: AudioBuffer[] = []
         for (const file of SAMPLE_FILES[k]) {
           try {
-            const resp = await fetch(`/sounds/${file}`)
+            const resp = await fetch(assetUrl(`sounds/${file}`))
             if (!resp.ok) continue
             const ab = await resp.arrayBuffer()
             variants.push(await ctx.decodeAudioData(ab))
