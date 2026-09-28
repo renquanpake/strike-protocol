@@ -1,5 +1,6 @@
 import type { InputFrame } from '../engine/input'
 import type { InputController } from '../engine/input'
+import { emptyInput } from '../engine/input'
 
 /**
  * 移动端触控层：左半屏虚拟摇杆（移动）+ 右半屏拖拽（视角）+ 按钮组（开火/跳/蹲/换弹/E/买/丢/切枪/投掷物/开镜/暂停）。
@@ -70,7 +71,20 @@ const CSS = `
 #joy-thumb { position: absolute; width: 52px; height: 52px; margin: -26px 0 0 -26px;
   border-radius: 50%; background: rgba(255, 210, 87, 0.7); border: 2px solid rgba(255, 210, 87, 0.9);
   pointer-events: none; display: none; }
+#touch-rotate { position: absolute; inset: 0; display: none; z-index: 60;
+  flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(5, 8, 12, 0.92); color: #dfe8f0; font-size: 18px; text-align: center;
+  pointer-events: auto; }
+#touch.on.rot #touch-rotate { display: flex; }
+#touch-rotate button { margin-top: 18px; background: rgba(140, 200, 255, 0.15); color: #ffd257;
+  border: 1px solid rgba(140, 200, 255, 0.5); border-radius: 6px; padding: 10px 22px;
+  font-size: 14px; cursor: pointer; }
 `
+
+/** B-R4：竖屏判定（纯函数，可单测） */
+export function isPortrait(w: number, h: number): boolean {
+  return h > w
+}
 
 /** B-R1.1/1.2 触控布局单一来源（right/left + top/bottom 锚定 px）。
  * 分区：左上=暂停/买/丢；右下=开火+开镜；右中=动作弧行（跳/蹲/换弹/E）；
@@ -127,6 +141,7 @@ export class TouchController {
   private capture: HTMLDivElement
   private joyBase: HTMLDivElement
   private joyThumb: HTMLDivElement
+  private rotateEl: HTMLDivElement
   private btnEls = new Map<string, HTMLDivElement>()
 
   // 摇杆
@@ -172,6 +187,22 @@ export class TouchController {
     this.root.appendChild(this.capture)
     this.root.appendChild(this.joyBase)
     this.root.appendChild(this.joyThumb)
+    // B-R4 竖屏提示遮罩（+「全屏并锁定横屏」按钮）
+    this.rotateEl = document.createElement('div')
+    this.rotateEl.id = 'touch-rotate'
+    const tip = document.createElement('div')
+    tip.textContent = '请旋转至横屏'
+    this.rotateEl.appendChild(tip)
+    const lockBtn = document.createElement('button')
+    lockBtn.textContent = '全屏并锁定横屏'
+    lockBtn.addEventListener('click', () => {
+      void document.documentElement.requestFullscreen().catch(() => {})
+      const o = screen.orientation as unknown as { lock?: (o: string) => Promise<void> }
+      if (o?.lock) void o.lock('landscape').catch(() => {})
+      // R4.5：平台拒绝方向锁定时静默降级，仅保留旋转提示
+    })
+    this.rotateEl.appendChild(lockBtn)
+    this.root.appendChild(this.rotateEl)
     container.appendChild(this.root)
 
     // 暂停按钮
@@ -313,6 +344,18 @@ export class TouchController {
 
   /** 每 tick：base 键盘/鼠标帧 + 触控叠加。开火/开镜不依赖指针锁。 */
   poll(): InputFrame {
+    // B-R4：竖屏对局中显示旋转遮罩并暂停输入轮询（横屏下一帧自动恢复）
+    const portrait = isPortrait(window.innerWidth, window.innerHeight) && this.root.classList.contains('on')
+    this.rotateEl.style.display = portrait ? 'flex' : 'none'
+    if (portrait) {
+      this.fireHeld = false
+      this.aimHeld = false
+      this.crouchHeld = false
+      this.useHeld = false
+      this.jumpHeld = false
+      this.joy = { forward: 0, back: 0, left: 0, right: 0 }
+      return emptyInput()
+    }
     const f = this.base.poll()
     f.forward = Math.max(f.forward, this.joy.forward)
     f.back = Math.max(f.back, this.joy.back)
