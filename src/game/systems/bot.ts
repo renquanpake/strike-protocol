@@ -8,6 +8,7 @@ import { astar } from '../map/navmesh'
 import { raycastBoxes } from '../physics/raycast'
 import { buyItem, GEAR_PRICES } from '../economy'
 import { inSmoke, throwGrenade } from './grenade'
+import type { EventBus } from '../../engine/eventbus'
 import { v3, type Vec3 } from '../../engine/math'
 import type { EventBus } from '../../engine/eventbus'
 import { emptyInput, type InputFrame } from '../../engine/input'
@@ -41,9 +42,22 @@ export interface BotBrain {
   preSmoke: boolean
   /** #23：最近无线电 tick */
   lastRadioTick: number
+  /** A-R2：最近一次听觉转向 tick（5s 防抖窗口起点，初始 -99999） */
+  lastSoundTurnTick: number
+  /** A-R2：待转至的声源朝向（rad，null=无；视觉目标出现时不覆盖） */
+  soundYawTarget: number | null
 }
 
 export type BotTactic = 'rush' | 'default' | 'slow' | 'lurk' | 'aggro' | 'stack'
+
+/** A-R2：声源记录（枪声 3s 窗口 / 脚步 0.5s 窗口由 updateBots 清理） */
+export interface BotSound {
+  x: number
+  z: number
+  tick: number
+  shooterId: number | null
+  kind: 'shot' | 'step'
+}
 
 export interface BotContext {
   brains: Map<number, BotBrain>
@@ -56,6 +70,8 @@ export interface BotContext {
   /** #22 本回合战术（freeze 时抽签，测试可断言） */
   tacticT: BotTactic
   tacticCT: BotTactic
+  /** A-R2：最近声源队列（创建时按上限裁剪，防止 EventBus 复用导致无界增长） */
+  heard: BotSound[]
 }
 
 /** #22 战术抽签（纯函数，可单测）：连败提升激进/潜伏概率 */
@@ -80,6 +96,7 @@ export function createBotContext(
   state: GameState,
   sites: { name: 'A' | 'B'; center: Vec3; elevation: number }[],
   difficulty: number = 5,
+  events?: EventBus,
 ): BotContext {
   const brains = new Map<number, BotBrain>()
   const idx = Math.max(1, Math.min(10, Math.round(difficulty)))
@@ -106,11 +123,38 @@ export function createBotContext(
         flashTarget: null,
         moloThrown: false,
         preSmoke: false,
-        lastRadioTick: 0,
+        lastRadioTick: -99999,
+        lastSoundTurnTick: -99999,
+        soundYawTarget: null,
       })
     }
   }
-  return { brains, processedRound: -1, freezeStartTick: 0, sites, profile, tacticT: 'default', tacticCT: 'default' }
+  const ctx: BotContext = {
+    brains,
+    processedRound: -1,
+    freezeStartTick: 0,
+    sites,
+    profile,
+    tacticT: 'default',
+    tacticCT: 'default',
+    heard: [],
+  }
+  // A-R2 听觉感知声源采集（队列按上限裁剪）
+  if (events) {
+    const pushSound = (s: BotSound) => {
+      ctx.heard.push(s)
+      if (ctx.heard.length > 48) ctx.heard.splice(0, ctx.heard.length - 48)
+    }
+    events.on('shot', (e) => {
+      const s = state.players[e.shooterId]
+      if (s && s.alive) pushSound({ x: s.position.x, z: s.position.z, tick: state.tick, shooterId: s.id, kind: 'shot' })
+    })
+    events.on('footstep', (e) => {
+      const s = state.players[e.playerId]
+      if (s && s.alive) pushSound({ x: e.x, z: e.z, tick: state.tick, shooterId: s.id, kind: 'step' })
+    })
+  }
+  return ctx
 }
 
 function gauss(rng: { float(): number }): number {
@@ -219,6 +263,40 @@ export function updateBots(
 
     const enemy = perceiveEnemy(state, level, p, brain, profile)
     if (enemy === null) brain.perceivedId = null
+
+    // A-R2 听觉感知：枪声（600u）/脚步（300u）引起转向；5s 防抖；低档无听觉。
+    // 有视觉目标时听觉转向让位（视觉优先）。
+    if (profile.hear) {
+      const src = pickRecentSound(ctx.heard, tick, 3 * CONFIG.tickRate, Math.round(0.5 * CONFIG.tickRate))
+      if (src && brain.perceivedId === null && tick - brain.lastSoundTurnTick >= 5 * CONFIG.tickRate) {
+        const shooter = src.shooterId != null ? state.players[src.shooterId] : null
+        const dx = src.x - p.position.x
+        const dz = src.z - p.position.z
+        const dist = Math.hypot(dx, dz)
+        const range = src.kind === 'shot' ? 600 : 300
+        // R2.3 音量：蹲伏/静走（crouch）脚步音量低 → 响应概率骤降
+        const stepProb = src.kind === 'shot' ? 1 : shooter?.crouching ? 0.004 : 0.03
+        if (
+          shooter && shooter.alive && shooter.team !== p.team &&
+          dist <= range && dist > 1 &&
+          state.rng.float() < stepProb
+        ) {
+          const desired = Math.atan2(-dx, -dz)
+          brain.soundYawTarget = desired
+          brain.lastSoundTurnTick = tick
+          if (src.kind === 'shot' && profile.radioHear && dist < 400 && tick - brain.lastRadioTick > 10 * CONFIG.tickRate) {
+            brain.lastRadioTick = tick
+            events.emit({ type: 'radio', team: p.team, key: 'heardSound', playerId: p.id })
+          }
+        }
+      }
+      if (brain.soundYawTarget != null && brain.perceivedId === null) {
+        const dyaw = angleDiff(brain.soundYawTarget, p.yaw)
+        if (Math.abs(dyaw) < 0.04) brain.soundYawTarget = null
+        else p.yaw += Math.max(-3 * dt, Math.min(3 * dt, dyaw))
+      }
+    }
+
     // #25 残局：CT 持钳者正在拆除（贴 C4）时不交战，优先 defuse
     const defusing =
       p.team === 'CT' &&
@@ -434,6 +512,20 @@ function moveInput(p: PlayerEntity, dir: Vec3, inp: InputFrame, dt: number): Inp
   if (side > 0.3) inp.right = 1
   else if (side < -0.3) inp.left = 1
   return inp
+}
+
+/** A-R2：取最近枪声（shotWin ticks 内）或脚步（stepWin ticks 内）声源，枪声优先 */
+function pickRecentSound(queue: BotSound[], tick: number, shotWin: number, stepWin: number): BotSound | null {
+  let shot: BotSound | null = null
+  let step: BotSound | null = null
+  for (let i = queue.length - 1; i >= 0; i--) {
+    const s = queue[i]
+    if (s.kind === 'shot') {
+      if (tick - s.tick <= shotWin) shot = s
+    } else if (tick - s.tick <= stepWin) step = s
+    if (shot && step) break
+  }
+  return shot ?? step
 }
 
 /** 感知：最近 LOS 可见敌人（前向视野 + 难度感知距离） */

@@ -143,6 +143,7 @@ export class Feedback {
         flashOut: t('radio.flash'),
         smokeOut: t('radio.smoke'),
         niceShot: t('radio.nice'),
+        heardSound: t('radio.heard'),
       }
     div.textContent = `${name}: ${map[key] ?? '…'}`
     this.radio.appendChild(div)

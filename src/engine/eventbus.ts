@@ -30,7 +30,7 @@ export type GameEvent =
   | {
       type: 'radio'
       team: 'T' | 'CT'
-      key: 'bombPlanted' | 'bombDefused' | 'enemySpotted' | 'needBackup' | 'flashOut' | 'smokeOut' | 'niceShot'
+      key: 'bombPlanted' | 'bombDefused' | 'enemySpotted' | 'needBackup' | 'flashOut' | 'smokeOut' | 'niceShot' | 'heardSound'
       playerId: number
     }
   | { type: 'achievement'; id: string }

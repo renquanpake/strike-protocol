@@ -899,7 +899,7 @@ async function startMatch(cfg: MatchConfig): Promise<void> {
     }
   }
   if (!state.training) state.targets = []
-  botCtx = createBotContext(state, level.sites, state.difficulty)
+  botCtx = createBotContext(state, level.sites, state.difficulty, events)
 
   // 重建渲染世界
   renderer.resetWorld()
