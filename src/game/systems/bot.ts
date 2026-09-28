@@ -320,66 +320,78 @@ export function updateBots(
       }
     } else {
       brain.targetId = null
-      if (brain.path === null || tick >= brain.replanAt) {
-        brain.path = astar(nav, p.position, brain.objective)
-        brain.replanAt = tick + Math.round(2 * CONFIG.tickRate)
-      }
-      const moveDir = nextWaypointDir(p.position, brain.path)
-      if (moveDir) {
-        inp = moveInput(p, moveDir, inp, dt)
-        const sp = Math.hypot(p.velocity.x, p.velocity.z)
-        brain.stuckTicks = sp < 15 ? brain.stuckTicks + 1 : 0
-        if (brain.stuckTicks >= 40) {
-          inp.jumpQueued = true
-          inp.jumpHeld = true
-          brain.stuckTicks = 0
-        }
-        // 投掷物预投：T 队推进途中向目标爆点封一道烟（每 bot 每回合 1 颗，rush/slow 更前置）
-        if (
-          p.team === 'T' &&
-          r.phase === 'live' &&
-          !brain.preSmoke &&
-          tick >= brain.nextThrowTick &&
-          dist2D(p.position, brain.objective) > 300
-        ) {
-          const smoke = p.weapons.grenades[2]
-          if (smoke && smoke.ammoMag > 0) {
-            const tx = brain.objective.x - p.position.x
-            const tz = brain.objective.z - p.position.z
-            const tl = Math.max(1, Math.hypot(tx, tz))
-            throwGrenade(
-              state,
-              p,
-              'smoke',
-              { x: p.position.x, y: p.position.y + 40, z: p.position.z },
-              v3(tx / tl, ctx.tacticT === 'rush' ? 0.15 : 0.28, tz / tl),
-              events,
-            )
-            smoke.ammoMag -= 1
-            brain.preSmoke = true
-            brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
-            events.emit({ type: 'radio', team: 'T', key: 'smokeOut', playerId: p.id })
-          }
-        }
-      } else {
-        brain.path = null
-        // 到达后：守点架枪（朝 idleYaw 转向）
-        const diw = angleDiff(brain.idleYaw, p.yaw)
+      // A-R7：感知到敌人后驻停——反应窗口/记忆期内不推进战术目标，面向感知方向等待，
+      // 防止窗口期走位漂出视野锥导致永远无法交战（回归缺陷修复）
+      const perceived = brain.perceivedId !== null ? state.players[brain.perceivedId] : null
+      if (perceived && perceived.alive) {
+        const pdx = perceived.position.x - p.position.x
+        const pdz = perceived.position.z - p.position.z
+        const desiredYaw = Math.atan2(-pdx, -pdz)
+        const dyaw = angleDiff(desiredYaw, p.yaw)
         const turnCap = 3 * dt
-        p.yaw += Math.max(-turnCap, Math.min(turnCap, diw))
-        p.pitch = 0
-        // #21：CT 守点投燃烧瓶（每回合 1 颗，朝守点前沿）
-        const molo = p.weapons.grenades[3]
-        if (p.team === 'CT' && molo && molo.ammoMag > 0 && !brain.moloThrown && tick >= brain.nextThrowTick) {
-          const mdir = v3(-Math.sin(brain.idleYaw), 0.15, -Math.cos(brain.idleYaw))
-          throwGrenade(state, p, 'molotov', { x: p.position.x, y: p.position.y + 40, z: p.position.z }, mdir, events)
-          molo.ammoMag -= 1
-          brain.moloThrown = true
+        p.yaw += Math.max(-turnCap, Math.min(turnCap, dyaw))
+      } else {
+        if (brain.path === null || tick >= brain.replanAt) {
+          brain.path = astar(nav, p.position, brain.objective)
+          brain.replanAt = tick + Math.round(2 * CONFIG.tickRate)
         }
-        // CT 持钳者靠近 C4 拆除（#25：拆除时优先，不交战）
-        const c4 = state.round.c4
-        if (c4.state === 'planted' && p.team === 'CT' && p.hasKit && dist2D(p.position, c4.position) <= 40) {
-          inp.useHeld = true
+        const moveDir = nextWaypointDir(p.position, brain.path)
+        if (moveDir) {
+          inp = moveInput(p, moveDir, inp, dt)
+          const sp = Math.hypot(p.velocity.x, p.velocity.z)
+          brain.stuckTicks = sp < 15 ? brain.stuckTicks + 1 : 0
+          if (brain.stuckTicks >= 40) {
+            inp.jumpQueued = true
+            inp.jumpHeld = true
+            brain.stuckTicks = 0
+          }
+          // 投掷物预投：T 队推进途中向目标爆点封一道烟（每 bot 每回合 1 颗，rush/slow 更前置）
+          if (
+            p.team === 'T' &&
+            r.phase === 'live' &&
+            !brain.preSmoke &&
+            tick >= brain.nextThrowTick &&
+            dist2D(p.position, brain.objective) > 300
+          ) {
+            const smoke = p.weapons.grenades[2]
+            if (smoke && smoke.ammoMag > 0) {
+              const tx = brain.objective.x - p.position.x
+              const tz = brain.objective.z - p.position.z
+              const tl = Math.max(1, Math.hypot(tx, tz))
+              throwGrenade(
+                state,
+                p,
+                'smoke',
+                { x: p.position.x, y: p.position.y + 40, z: p.position.z },
+                v3(tx / tl, ctx.tacticT === 'rush' ? 0.15 : 0.28, tz / tl),
+                events,
+              )
+              smoke.ammoMag -= 1
+              brain.preSmoke = true
+              brain.nextThrowTick = tick + Math.round((8000 / 1000) * CONFIG.tickRate)
+              events.emit({ type: 'radio', team: 'T', key: 'smokeOut', playerId: p.id })
+            }
+          }
+        } else {
+          brain.path = null
+          // 到达后：守点架枪（朝 idleYaw 转向）
+          const diw = angleDiff(brain.idleYaw, p.yaw)
+          const turnCap = 3 * dt
+          p.yaw += Math.max(-turnCap, Math.min(turnCap, diw))
+          p.pitch = 0
+          // #21：CT 守点投燃烧瓶（每回合 1 颗，朝守点前沿）
+          const molo = p.weapons.grenades[3]
+          if (p.team === 'CT' && molo && molo.ammoMag > 0 && !brain.moloThrown && tick >= brain.nextThrowTick) {
+            const mdir = v3(-Math.sin(brain.idleYaw), 0.15, -Math.cos(brain.idleYaw))
+            throwGrenade(state, p, 'molotov', { x: p.position.x, y: p.position.y + 40, z: p.position.z }, mdir, events)
+            molo.ammoMag -= 1
+            brain.moloThrown = true
+          }
+          // CT 持钳者靠近 C4 拆除（#25：拆除时优先，不交战）
+          const c4 = state.round.c4
+          if (c4.state === 'planted' && p.team === 'CT' && p.hasKit && dist2D(p.position, c4.position) <= 40) {
+            inp.useHeld = true
+          }
         }
       }
     }

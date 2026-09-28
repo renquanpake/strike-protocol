@@ -177,14 +177,20 @@ describe('bot AI (M9 打磨)', () => {
 })
 
 describe('#19 Bot 难度分级', () => {
-  it('难度表 10 档，第 5 档 = 现行回归基线', () => {
+  it('难度表 10 档，第 5 档 = 硬核校准基线（A-R7）', () => {
     expect(CONFIG.BOT_DIFFICULTY.length).toBe(10)
     const base = CONFIG.BOT_DIFFICULTY[4]
-    expect(base.reactionMs).toEqual([200, 400])
+    expect(base.reactionMs).toEqual([350, 500])
     expect(base.sigmaMul).toBe(1)
     expect(base.tauMul).toBe(1)
     expect(base.viewRange).toBe(480)
     expect(base.strafePeriod).toBe(32)
+    // R7：3-5 档启用全部智能行为
+    expect(base.hear).toBe(true)
+    expect(base.cover).toBe(true)
+    expect(base.anchor).toBe(true)
+    expect(base.burst).toBe(true)
+    expect(base.lkpSec).toBe(4)
   })
 
   it('档位单调：1 档反应最慢感知最弱，10 档最快最强', () => {

@@ -109,17 +109,21 @@ export const CONFIG = {
   botAimTauTicks: 192, // 瞄准收敛时间常数（tick，约 3s）
   /** 难度表 1-10 档（#19 消费）：反应窗口 [min,max] ms / 瞄准误差乘数 / 收敛时间常数乘数 / 感知距离 u / 走位周期 tick。
    * 第 5 档 = 现行参数（回归基线：reaction [200,400]、sigmaMul 1、tauMul 1、viewRange 480、strafePeriod 32）。 */
+  // A-R7：难度档位单一来源（R2-R6 行为能力 + 难度曲线全部读此表，禁止散落魔法数）。
+  // 定位偏高硬核：难度 5 ≈ 真人水平（反应 0.35-0.5s），10 档极限。
+  // 字段说明：hear 听觉感知；lkpSec 目标记忆追击时长（0=不追）；cover 掩体转移；
+  // anchor 防守架点；burst 远距离点射；headBias 瞄准头部倾向（0-1）；radioHear 听声报点。
   BOT_DIFFICULTY: [
-    { reactionMs: [650, 950], sigmaMul: 2.2, tauMul: 1.6, viewRange: 340, strafePeriod: 64 },
-    { reactionMs: [560, 840], sigmaMul: 1.9, tauMul: 1.45, viewRange: 370, strafePeriod: 56 },
-    { reactionMs: [480, 740], sigmaMul: 1.7, tauMul: 1.35, viewRange: 400, strafePeriod: 48 },
-    { reactionMs: [390, 620], sigmaMul: 1.45, tauMul: 1.2, viewRange: 430, strafePeriod: 40 },
-    { reactionMs: [200, 400], sigmaMul: 1, tauMul: 1, viewRange: 480, strafePeriod: 32 },
-    { reactionMs: [180, 340], sigmaMul: 0.85, tauMul: 0.9, viewRange: 510, strafePeriod: 28 },
-    { reactionMs: [160, 300], sigmaMul: 0.72, tauMul: 0.8, viewRange: 540, strafePeriod: 26 },
-    { reactionMs: [140, 260], sigmaMul: 0.6, tauMul: 0.7, viewRange: 580, strafePeriod: 24 },
-    { reactionMs: [120, 220], sigmaMul: 0.48, tauMul: 0.6, viewRange: 620, strafePeriod: 22 },
-    { reactionMs: [90, 180], sigmaMul: 0.38, tauMul: 0.5, viewRange: 680, strafePeriod: 20 },
+    { reactionMs: [850, 1200], sigmaMul: 2.2, tauMul: 1.6, viewRange: 300, strafePeriod: 72, hear: false, lkpSec: 0, cover: false, anchor: false, burst: false, headBias: 0, radioHear: false },
+    { reactionMs: [800, 1100], sigmaMul: 2.0, tauMul: 1.5, viewRange: 330, strafePeriod: 64, hear: false, lkpSec: 0, cover: false, anchor: false, burst: false, headBias: 0, radioHear: false },
+    { reactionMs: [480, 800], sigmaMul: 1.6, tauMul: 1.3, viewRange: 420, strafePeriod: 48, hear: true, lkpSec: 4, cover: true, anchor: true, burst: true, headBias: 0, radioHear: false },
+    { reactionMs: [400, 700], sigmaMul: 1.35, tauMul: 1.15, viewRange: 450, strafePeriod: 40, hear: true, lkpSec: 4, cover: true, anchor: true, burst: true, headBias: 0, radioHear: false },
+    { reactionMs: [350, 500], sigmaMul: 1.0, tauMul: 1, viewRange: 480, strafePeriod: 32, hear: true, lkpSec: 4, cover: true, anchor: true, burst: true, headBias: 0, radioHear: false },
+    { reactionMs: [250, 350], sigmaMul: 0.85, tauMul: 0.9, viewRange: 510, strafePeriod: 28, hear: true, lkpSec: 4, cover: true, anchor: true, burst: true, headBias: 0.3, radioHear: true },
+    { reactionMs: [220, 320], sigmaMul: 0.72, tauMul: 0.8, viewRange: 540, strafePeriod: 26, hear: true, lkpSec: 5, cover: true, anchor: true, burst: true, headBias: 0.4, radioHear: true },
+    { reactionMs: [200, 290], sigmaMul: 0.6, tauMul: 0.7, viewRange: 580, strafePeriod: 24, hear: true, lkpSec: 5, cover: true, anchor: true, burst: true, headBias: 0.5, radioHear: true },
+    { reactionMs: [180, 260], sigmaMul: 0.48, tauMul: 0.6, viewRange: 620, strafePeriod: 22, hear: true, lkpSec: 5, cover: true, anchor: true, burst: true, headBias: 0.55, radioHear: true },
+    { reactionMs: [140, 220], sigmaMul: 0.38, tauMul: 0.5, viewRange: 680, strafePeriod: 20, hear: true, lkpSec: 6, cover: true, anchor: true, burst: true, headBias: 0.6, radioHear: true },
   ] as const,
   /** 部位倍率（CS：腹 0.85、四肢 0.5；头部为逐枪 headMul，见 weapons.ts） */
   hitboxMultipliers: {
