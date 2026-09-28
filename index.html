@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STRIKE PROTOCOL</title>
+    <link rel="icon" href="/strike-protocol/pwa-192.png" />
+    <link rel="apple-touch-icon" href="/strike-protocol/pwa-192.png" />
+    <link rel="stylesheet" href="/strike-protocol/fonts.css" />
+    <link rel="stylesheet" href="/strike-protocol/hud.css" />
+    <script type="module" crossorigin src="/strike-protocol/assets/main-5ErXOi_F.js"></script>
+  <link rel="manifest" href="/strike-protocol/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/strike-protocol/registerSW.js"></script></head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="loading">
+      <div class="lg-logo">STRIKE PROTOCOL</div>
+      <div class="lg-bar"><div id="loading-bar"></div></div>
+      <div id="loading-status">正在初始化…</div>
+    </div>
+    <div id="fatal">
+      <div class="box">
+        <h1>无法启动游戏</h1>
+        <p id="fatal-msg"></p>
+        <button id="fatal-retry" onclick="location.reload()">重 试</button>
+      </div>
+    </div>
+    <div id="error-log"></div>
+    <div id="hud">
+        <div id="crosshair" data-style="cross">
+          <i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-d"></i><i class="ch-c"></i>
+        </div>
+        <div id="scope" data-mag="1"></div>
+        <div id="blind"></div>
+        <div id="smokeveil"></div>
+        <div id="hitmarker"></div>
+        <div id="dmg"></div>
+        <svg id="dmgdir" viewBox="0 0 140 140">
+          <path id="dmgdir-a" d="M 35 35 A 42.4 42.4 0 0 1 105 35" />
+          <path id="dmgdir-b" d="M 35 35 A 42.4 42.4 0 0 1 105 35" />
+        </svg>
+        <div id="killreward"></div>
+        <div id="spectate"></div>
+        <div id="radio"></div>
+        <div id="killfeed"></div>
+        <div id="toasts"></div>
+        <div id="lock-hint">
+        <div class="title">STRIKE PROTOCOL</div>
+        点击画面锁定鼠标开始<br />
+        WASD 移动 / 空格 跳跃(按住连跳) / Shift 静走 / Ctrl 蹲<br />
+        鼠标左键 开火 / 右键 开镜(狙击) / R 换弹 / 1 主 · 2 副 · 3 刀 · 4-7 投掷物<br />
+        B 买枪 / G 丢装备 / Tab 计分板 / E 安放·拆除 C4 / Esc 暂停
+      </div>
+      <div id="round"></div>
+      <div id="bigtimer"></div>
+      <div id="roundmsg"></div>
+      <canvas id="radar" width="220" height="220"></canvas>
+      <div id="status"></div>
+      <div id="keys">FPS <span id="fps">--</span> · TICK <span id="tick">0</span></div>
+      <div id="weapon"></div>
+      <div id="vitals">
+        <div id="hprow"><span id="hpnum">100</span><span id="apnum">—</span></div>
+        <div class="vbar hp"><i></i></div>
+        <div class="vbar ap"><i></i></div>
+      </div>
+      <div id="nades"><i>雷</i><i>闪</i><i>烟</i><i>燃</i></div>
+      <div id="ammopanel"><span id="ammod"></span><span id="ammore"></span></div>
+    </div>
+  </body>
+</html>

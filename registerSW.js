@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/strike-protocol/sw.js', { scope: '/strike-protocol/' })})}
