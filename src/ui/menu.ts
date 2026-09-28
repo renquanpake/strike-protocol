@@ -300,6 +300,15 @@ export class MenuUI {
     setCol.appendChild(this.mkRange('触摸视角灵敏度', 0.2, 3, 0.05, s.touchSens, (v) => (s.touchSens = v)))
     setCol.appendChild(this.mkToggle('开镜灵敏度分离', s.aimSensSplit, (v) => (s.aimSensSplit = v)))
     setCol.appendChild(this.mkRange('开镜灵敏度', 0.2, 1.5, 0.05, s.aimSens, (v) => (s.aimSens = v)))
+    // B-R1.3 触控布局预设（右手 = 默认，左手 = 水平镜像；长按可自定义）
+    setCol.appendChild(
+      this.mkDropdown(
+        '触控布局',
+        ['右手布局', '左手布局'],
+        s.touchPreset === 'left' ? 1 : 0,
+        (i) => (s.touchPreset = i === 1 ? 'left' : 'right'),
+      ),
+    )
     // B-R3 操作方式：自动检测（默认）/ 触屏 / 键鼠
     const modeSel = this.mkDropdown(
       '操作方式',

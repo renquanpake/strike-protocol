@@ -24,6 +24,10 @@ export interface Settings {
   aimSens: number
   /** B-R3：操作方式（auto=自动检测 / touch=触屏 / mouse=键鼠） */
   inputMode: 'auto' | 'touch' | 'mouse'
+  /** B-R1.3：触控布局预设（right=右手开火 / left=左手开火镜像） */
+  touchPreset: 'right' | 'left'
+  /** B-R1.5：用户自定义按键偏移（编辑器拖动产出，按 key 存 dx/dy） */
+  touchOffsets: Record<string, { dx: number; dy: number }>
   /** 0-1 主音量 */
   volume: number
   crosshair: CrosshairSettings
@@ -63,6 +67,8 @@ export const DEFAULT_SETTINGS: Settings = {
   aimSensSplit: false,
   aimSens: 0.5,
   inputMode: 'auto',
+  touchPreset: 'right',
+  touchOffsets: {},
   volume: 0.7,
   crosshair: { style: 'cross', color: '#d8ffe8', gapScale: 1 },
   screenShake: true,
@@ -98,6 +104,9 @@ export function loadSettings(): Settings {
   s.fov = clampRange(s.fov, 70, 110)
   s.volume = clampRange(s.volume, 0, 1)
   s.inputMode = resolveInputMode(s.inputMode) // 非法值收敛为 auto
+  s.touchPreset = s.touchPreset === 'left' ? 'left' : 'right' // 非法值收敛为 right
+  s.touchOffsets =
+    s.touchOffsets && typeof s.touchOffsets === 'object' ? s.touchOffsets : {}
   return s
 }
 

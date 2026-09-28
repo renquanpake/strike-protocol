@@ -872,6 +872,7 @@ function applySettings(s: Settings): void {
   setMouseSensScale(s.mouseSens)
   setAimSensScale(s.aimSens, s.aimSensSplit)
   if (touch) touch.lookScale = s.touchSens // B-R2.2 触摸视角灵敏度
+  if (touch) touch.relayout(s) // B-R1.3 触控布局预设/自定义偏移即时生效
   renderer.setQuality(s.quality)
   renderer.setDprCap(s.resolution)
   feedback?.applyCrosshairSettings(s.crosshair.style, s.crosshair.color, s.crosshair.gapScale)
