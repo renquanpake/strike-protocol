@@ -48,19 +48,20 @@ const CSS = `
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
 }
 #touch .tb-btn.on { background: rgba(255, 210, 87, 0.5); border-color: rgba(255, 210, 87, 0.9); }
-.tb-fire { width: 92px; height: 92px; right: 20px; bottom: 26px; font-size: 18px; font-weight: 700;
+/* 定位/尺寸由 TOUCH_LAYOUT 单源驱动（JS 施加，保证零重叠可单测，B-R1.1/1.2） */
+.tb-fire { font-size: 18px; font-weight: 700;
   background: rgba(208, 52, 44, 0.4); border-color: rgba(255, 120, 90, 0.7); }
-.tb-aim { width: 56px; height: 56px; right: 122px; bottom: 52px; font-size: 16px; }
-.tb-jump { width: 54px; height: 54px; right: 34px; bottom: 132px; font-size: 13px; }
-.tb-crouch { width: 54px; height: 54px; right: 100px; bottom: 132px; font-size: 13px; }
-.tb-reload { width: 54px; height: 54px; right: 166px; bottom: 132px; font-size: 13px; }
-.tb-use { width: 54px; height: 54px; right: 122px; bottom: 132px; font-size: 13px; }
-.tb-buy { width: 50px; height: 50px; right: 20px; top: 96px; font-size: 13px; }
-.tb-drop { width: 50px; height: 50px; right: 84px; top: 96px; font-size: 13px; }
-.tb-slot { width: 44px; height: 44px; font-size: 13px; }
-.tb-grenade { width: 40px; height: 40px; font-size: 12px; }
-.tb-pause { position: absolute; pointer-events: auto; touch-action: none; left: 16px; top: 12px;
-  width: 46px; height: 46px; display: flex; align-items: center; justify-content: center;
+.tb-aim { font-size: 16px; }
+.tb-jump { font-size: 13px; }
+.tb-crouch { font-size: 13px; }
+.tb-reload { font-size: 13px; }
+.tb-use { font-size: 13px; }
+.tb-buy { font-size: 13px; }
+.tb-drop { font-size: 13px; }
+.tb-slot { font-size: 13px; }
+.tb-grenade { font-size: 12px; }
+.tb-pause { position: absolute; pointer-events: auto; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
   border-radius: 50%; background: rgba(10, 14, 18, 0.5); border: 1.5px solid rgba(140, 200, 255, 0.4);
   color: #e8eef6; font-size: 20px; -webkit-tap-highlight-color: transparent; }
 #joy-base { position: absolute; width: 110px; height: 110px; margin: -55px 0 0 -55px;
@@ -70,6 +71,46 @@ const CSS = `
   border-radius: 50%; background: rgba(255, 210, 87, 0.7); border: 2px solid rgba(255, 210, 87, 0.9);
   pointer-events: none; display: none; }
 `
+
+/** B-R1.1/1.2 触控布局单一来源（right/left + top/bottom 锚定 px）。
+ * 分区：左上=暂停/买/丢；右下=开火+开镜；右中=动作弧行（跳/蹲/换弹/E）；
+ * 右上=武器槽行（主副刀）+ 投掷行（雷闪烟燃）。单测断言任意两键零重叠。 */
+export interface TouchLayoutItem {
+  w: number
+  h: number
+  right?: number
+  left?: number
+  bottom?: number
+  top?: number
+}
+export const TOUCH_LAYOUT: Record<string, TouchLayoutItem> = {
+  pause: { w: 46, h: 46, left: 16, top: 12 },
+  buy: { w: 50, h: 50, left: 72, top: 10 },
+  drop: { w: 50, h: 50, left: 132, top: 10 },
+  fire: { w: 92, h: 92, right: 20, bottom: 20 },
+  aim: { w: 56, h: 56, right: 126, bottom: 38 },
+  jump: { w: 54, h: 54, right: 30, bottom: 126 },
+  crouch: { w: 54, h: 54, right: 96, bottom: 126 },
+  reload: { w: 54, h: 54, right: 162, bottom: 126 },
+  use: { w: 54, h: 54, right: 228, bottom: 126 },
+  s0: { w: 44, h: 44, right: 272, bottom: 238 },
+  s1: { w: 44, h: 44, right: 218, bottom: 238 },
+  s2: { w: 44, h: 44, right: 164, bottom: 238 },
+  s3: { w: 40, h: 40, right: 244, bottom: 192 },
+  s4: { w: 40, h: 40, right: 194, bottom: 192 },
+  s5: { w: 40, h: 40, right: 144, bottom: 192 },
+  s6: { w: 40, h: 40, right: 94, bottom: 192 },
+}
+
+/** 按 TOUCH_LAYOUT 条目施加定位与尺寸（单源，保证可测） */
+function applyLayout(el: HTMLElement, lay: TouchLayoutItem): void {
+  el.style.width = `${lay.w}px`
+  el.style.height = `${lay.h}px`
+  if (lay.right != null) el.style.right = `${lay.right}px`
+  if (lay.left != null) el.style.left = `${lay.left}px`
+  if (lay.bottom != null) el.style.bottom = `${lay.bottom}px`
+  if (lay.top != null) el.style.top = `${lay.top}px`
+}
 
 let styleInjected = false
 function injectStyle(): void {
@@ -137,22 +178,20 @@ export class TouchController {
     const pause = document.createElement('div')
     pause.className = 'tb-pause'
     pause.textContent = 'II'
+    applyLayout(pause, TOUCH_LAYOUT.pause)
     pause.addEventListener('pointerdown', (e) => {
       e.preventDefault()
       this.onPause?.()
     })
     this.root.appendChild(pause)
 
-    // 动作按钮
+    // 动作按钮（定位/尺寸按 TOUCH_LAYOUT 单源施加）
     for (const b of BUTTONS) {
       const el = document.createElement('div')
       el.className = `tb-btn ${b.cls}`
       el.textContent = b.label
-      const extra = SLOT_POS[b.key]
-      if (extra) {
-        el.style.left = extra.left
-        el.style.bottom = extra.bottom
-      }
+      const lay = TOUCH_LAYOUT[b.key]
+      if (lay) applyLayout(el, lay)
       el.addEventListener('pointerdown', (e) => this.btnDown(e, b))
       el.addEventListener('pointerup', (e) => this.btnUp(e, b))
       el.addEventListener('pointercancel', (e) => this.btnUp(e, b))
@@ -324,12 +363,3 @@ export class TouchController {
 }
 
 /** 切枪/投掷物小按钮定位（右下角上方两列） */
-const SLOT_POS: Record<string, { left: string; bottom: string }> = {
-  s0: { left: 'calc(100% - 236px)', bottom: '220px' },
-  s1: { left: 'calc(100% - 184px)', bottom: '220px' },
-  s2: { left: 'calc(100% - 132px)', bottom: '220px' },
-  s3: { left: 'calc(100% - 250px)', bottom: '168px' },
-  s4: { left: 'calc(100% - 204px)', bottom: '168px' },
-  s5: { left: 'calc(100% - 158px)', bottom: '168px' },
-  s6: { left: 'calc(100% - 112px)', bottom: '168px' },
-}
