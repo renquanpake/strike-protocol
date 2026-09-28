@@ -53,6 +53,12 @@ export interface BotBrain {
   cover: Vec3 | null
   coverUsed: boolean
   coverEnterTick: number
+  /** A-R5：守点无接触计时起点（engaging 时清零） */
+  holdSinceTick: number
+  /** A-R5.4：本回合已换位（每回合 1 次） */
+  holdSwapped: boolean
+  /** A-R5.2：本回合已执行过枪声支援 */
+  supportingShot: boolean
 }
 
 export type BotTactic = 'rush' | 'default' | 'slow' | 'lurk' | 'aggro' | 'stack'
@@ -138,6 +144,9 @@ export function createBotContext(
         cover: null,
         coverUsed: false,
         coverEnterTick: 0,
+        holdSinceTick: 0,
+        holdSwapped: false,
+        supportingShot: false,
       })
     }
   }
@@ -204,6 +213,14 @@ export function updateBots(
     ctx.freezeStartTick = state.tick
     botEconomy(state, events, state.tick)
     ctx.processedRound = r.roundNumber
+    // A-R5/R4：新回合重置换位/支援/掩体额度
+    for (const b of ctx.brains.values()) {
+      b.holdSwapped = false
+      b.supportingShot = false
+      b.cover = null
+      b.coverUsed = false
+      b.lkp = null
+    }
   }
   // retake：队友本 tick 阵亡 → 重分配战术目标（换防/改推点，避免 5 个 bot 站桩等死）
   for (const p of state.players) {
@@ -334,6 +351,7 @@ export function updateBots(
 
     if (engaging && enemy) {
       brain.path = null
+      brain.holdSinceTick = 0 // A-R5：交战即重置守点计时
       const blinded = tick < p.blindUntil
       const eye = { x: p.position.x, y: p.position.y + CONFIG.eyeHeight, z: p.position.z }
       const aimY = enemy.position.y + (rng.float() < 0.3 ? 60 : 44)
@@ -523,6 +541,49 @@ export function updateBots(
           const turnCap = 3 * dt
           p.yaw += Math.max(-turnCap, Math.min(turnCap, diw))
           p.pitch = 0
+          // A-R5 防守架点：记录守点起始；无接触 40s 换位（每回合 1 次）；枪声 800u 内走 nav 支援
+          if (brain.holdSinceTick === 0) brain.holdSinceTick = tick
+          // R5.4：守点 40s 无接触 → 爆点区域内变换一次站位（CT）
+          if (
+            p.team === 'CT' &&
+            ctx.sites.length > 0 &&
+            !brain.holdSwapped &&
+            brain.perceivedId === null &&
+            tick - brain.holdSinceTick >= 40 * CONFIG.tickRate
+          ) {
+            const site = ctx.sites[brain.id % ctx.sites.length]
+            const jitter = (state.rng.float() - 0.5) * 2
+            brain.objective = v3(site.center.x + jitter * 60, site.elevation, site.center.z + jitter * 60)
+            brain.holdSwapped = true
+            brain.path = astar(nav, p.position, brain.objective)
+            brain.holdSinceTick = tick
+          }
+          // R5.2：800u 内感知枪声 → 沿 navmesh 向声源方向支援（每回合 1 次）
+          const shot = pickRecentSound(ctx.heard, tick, 3 * CONFIG.tickRate, 0)
+          if (
+            p.team === 'CT' &&
+            !brain.supportingShot &&
+            shot && shot.kind === 'shot' &&
+            dist2D(p.position, { x: shot.x, y: 0, z: shot.z }) <= 800
+          ) {
+            brain.supportingShot = true
+            const sx = shot.x
+            const sz = shot.z
+            const sdx = sx - p.position.x
+            const sdz = sz - p.position.z
+            const sLen = Math.max(1, Math.hypot(sdx, sdz))
+            // 支援到声源方向 60% 处（不冲到脸上），保持战术位置
+            brain.objective = v3(
+              p.position.x + (sdx / sLen) * sLen * 0.6,
+              p.position.y,
+              p.position.z + (sdz / sLen) * sLen * 0.6,
+            )
+            brain.path = astar(nav, p.position, brain.objective)
+            if (profile.radioHear && tick - brain.lastRadioTick > 10 * CONFIG.tickRate) {
+              brain.lastRadioTick = tick
+              events.emit({ type: 'radio', team: 'CT', key: 'heardSound', playerId: p.id })
+            }
+          }
           // #21：CT 守点投燃烧瓶（每回合 1 颗，朝守点前沿）
           const molo = p.weapons.grenades[3]
           if (p.team === 'CT' && molo && molo.ammoMag > 0 && !brain.moloThrown && tick >= brain.nextThrowTick) {
