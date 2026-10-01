@@ -153,52 +153,124 @@ describe('shot damage formula', () => {
     const awp = shotDamage(WEAPONS.awp, 'head', 0, 0)
     expect(awp.damage).toBeCloseTo(WEAPONS.awp.damage * (WEAPONS.awp.headMul ?? 4), 1)
   })
-  it('距离衰减（falloffStart 后线性至 rangeModifier，刻度为地图尺度 1300-4000u）', () => {
+  it('距离衰减（falloffStart 后线性至 rangeModifier，CS 每 500u 衰减刻度）', () => {
     const m4 = WEAPONS.m4
     const near = shotDamage(m4, 'chest', 0, 0)
     const mid = shotDamage(m4, 'chest', 2000, 0)
     const far = shotDamage(m4, 'chest', 4000, 0)
-    expect(near.damage).toBeCloseTo(30, 1)
+    expect(near.damage).toBeCloseTo(m4.damage, 1)
     expect(mid.damage).toBeGreaterThan(far.damage)
     expect(mid.damage).toBeLessThan(near.damage)
     // 衰减地板 = rangeModifier
     expect(far.damage).toBeCloseTo(m4.damage * m4.rangeModifier, 1)
   })
 
-  it('护甲池模型：非头部命中吸收 50%（受甲池约束），返回 armorLost', () => {
+  it('护甲 CS 模型：最终伤害 = 原伤 × armorPenetration，甲损耗 = 最终伤 × 0.5（腿免甲/甲尽回升）', () => {
     const m4 = WEAPONS.m4
     const noArmor = shotDamage(m4, 'chest', 0, 0)
     const withArmor = shotDamage(m4, 'chest', 0, 100)
-    expect(noArmor.damage).toBeCloseTo(30, 1)
-    expect(withArmor.damage).toBeCloseTo(15, 1)
-    expect(withArmor.armorLost).toBeCloseTo(15, 1)
-    // 甲池耗尽后不再减伤
+    expect(noArmor.damage).toBeCloseTo(m4.damage, 1)
+    expect(withArmor.damage).toBeCloseTo(m4.damage * m4.armorPenetration, 1)
+    expect(withArmor.armorLost).toBeCloseTo((m4.damage * m4.armorPenetration) * 0.5, 1)
+    // 甲池耗尽后伤害回升（CS 源码行为：d - 2×armor）
     const lowArmor = shotDamage(m4, 'chest', 0, 5)
-    expect(lowArmor.damage).toBeCloseTo(30 - 5, 1)
+    expect(lowArmor.damage).toBeCloseTo(m4.damage - 10, 1)
     expect(lowArmor.armorLost).toBeCloseTo(5, 1)
+    // 腿部免甲（CS：腿不吃护甲减免）
+    const legArmor = shotDamage(m4, 'legs', 0, 100)
+    expect(legArmor.damage).toBeCloseTo(m4.damage * 0.75, 1)
+    expect(legArmor.armorLost).toBe(0)
+    // AK 对甲身体 ≈ 28（36×0.775，CS wiki）
+    const ak = shotDamage(WEAPONS.ak, 'chest', 0, 100)
+    expect(ak.damage).toBeCloseTo(27.9, 1)
   })
 
-  it('腿部 0.5 倍率（CS 四肢减伤）', () => {
+  it('腿部 0.75 倍率（CS2 hitgroup）', () => {
     const d = shotDamage(WEAPONS.glock, 'legs', 100, 0)
-    expect(d.damage).toBeCloseTo(WEAPONS.glock.damage * 0.5, 1)
+    expect(d.damage).toBeCloseTo(WEAPONS.glock.damage * 0.75, 1)
+  })
+
+  it('腹部 1.25 倍率（CS2 hitgroup：AK 腹 45 无甲三枪死）', () => {
+    const d = shotDamage(WEAPONS.ak, 'stomach', 0, 0)
+    expect(d.damage).toBeCloseTo(WEAPONS.ak.damage * 1.25, 1)
   })
 })
 
-describe('武器库完整性 (M8)', () => {
-  it('全部 15 种武器数值表合法', () => {
+describe('武器库完整性 (M8, 批次 A 全量 42 项)', () => {
+  const count = (cat: string) => Object.values(WEAPONS).filter((w) => w.category === cat).length
+  it('CS2 全量清单：10 手枪 / 7 冲锋 / 7 步枪 / 4 狙 / 4 霰 / 2 机枪 / 6 投掷 / zeus / 刀', () => {
+    expect(count('pistol')).toBe(10)
+    expect(count('smg')).toBe(7)
+    expect(count('rifle')).toBe(7)
+    expect(count('sniper')).toBe(4)
+    expect(count('shotgun')).toBe(4)
+    expect(count('lmg')).toBe(2)
+    expect(count('grenade')).toBe(6)
+    expect(count('gear')).toBe(1)
+    expect(count('knife')).toBe(1)
+    expect(Object.keys(WEAPONS).length).toBe(42)
+  })
+  it('关键枪价格/击杀奖励与 CS2 一致', () => {
+    expect(WEAPONS.ak.price).toBe(2700)
+    expect(WEAPONS.m4.price).toBe(3100)
+    expect(WEAPONS.awp.price).toBe(4750)
+    expect(WEAPONS.awp.killReward).toBe(100)
+    expect(WEAPONS.deagle.price).toBe(700)
+    expect(WEAPONS.mp9.killReward).toBe(600)
+    expect(WEAPONS.nova.killReward).toBe(900)
+    expect(WEAPONS.knife.killReward).toBe(1500)
+    expect(WEAPONS.zeus.killReward).toBe(0)
+    expect(WEAPONS.negev.price).toBe(1700)
+  })
+  it('阵营限定枪（CS2 购买规则）', () => {
+    expect(WEAPONS.glock.team).toBe('T')
+    expect(WEAPONS.usp.team).toBe('CT')
+    expect(WEAPONS.mac10.team).toBe('T')
+    expect(WEAPONS.mp9.team).toBe('CT')
+    expect(WEAPONS.ak.team).toBe('T')
+    expect(WEAPONS.m4.team).toBe('CT')
+    expect(WEAPONS.galil.team).toBe('T')
+    expect(WEAPONS.famas.team).toBe('CT')
+    expect(WEAPONS.molotov.team).toBe('T')
+    expect(WEAPONS.incendiary.team).toBe('CT')
+    expect(WEAPONS.g3sg1.team).toBe('T')
+    expect(WEAPONS.scar20.team).toBe('CT')
+    expect(WEAPONS.mag7.team).toBe('CT')
+    expect(WEAPONS.sawnoff.team).toBe('T')
+    expect(WEAPONS.deagle.team).toBeUndefined()
+  })
+  it('持枪移速比表驱动（AWP 0.80 / 步枪 0.86-0.90 / SMG 0.96 / 刀 1.0 / LMG 0.78）', () => {
+    expect(WEAPONS.awp.moveSpeedScale).toBe(0.8)
+    expect(WEAPONS.ak.moveSpeedScale).toBe(0.86)
+    expect(WEAPONS.m4.moveSpeedScale).toBe(0.9)
+    expect(WEAPONS.mp9.moveSpeedScale).toBe(0.96)
+    expect(WEAPONS.knife.moveSpeedScale).toBe(1)
+    expect(WEAPONS.negev.moveSpeedScale).toBe(0.78)
+  })
+  it('全部武器数值表合法（含手枪/霰弹/狙击/zeus pattern 与 ammo）', () => {
     const ids = Object.keys(WEAPONS)
-    expect(ids.length).toBeGreaterThanOrEqual(15)
+    expect(ids.length).toBeGreaterThanOrEqual(42)
     for (const id of ids) {
       const w = WEAPONS[id]
       expect(w.fireRateMs).toBeGreaterThan(0)
       expect(w.magazine).toBeGreaterThanOrEqual(0)
       expect(w.damage).toBeGreaterThanOrEqual(0)
-      if (w.category !== 'grenade' && w.category !== 'knife') {
+      expect(['T', 'CT', undefined]).toContain(w.team)
+      if (w.category !== 'grenade' && w.category !== 'knife' && w.category !== 'gear') {
         expect(w.magazine).toBeGreaterThan(0)
+        expect(w.recoilPattern.length).toBeGreaterThan(0)
+        expect(w.wallPenetration ?? 0).toBeGreaterThanOrEqual(0)
       }
       if (w.category !== 'knife') expect(w.price).toBeGreaterThan(0)
-      if (w.category !== 'grenade' && w.category !== 'knife') {
-        expect(w.recoilPattern.length).toBeGreaterThan(0)
+      if (w.category === 'grenade') {
+        expect(w.magazine).toBe(1)
+        expect(w.reserve).toBeGreaterThan(0)
+      }
+    }
+    // 全自动枪械 pattern ≥ 6 发（可学习弹道）；连发狙单发大 kick 例外
+    for (const w of Object.values(WEAPONS)) {
+      if (w.auto && !['gear', 'knife', 'sniper', 'shotgun'].includes(w.category)) {
+        expect(w.recoilPattern.length).toBeGreaterThanOrEqual(5)
       }
     }
   })

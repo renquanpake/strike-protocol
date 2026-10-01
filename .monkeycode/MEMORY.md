@@ -117,3 +117,13 @@
   - vite.config 的 PWA manifest/navigateFallback 已是相对路径（commit ab4f1ad），本地 dev 与 Pages 子路径通用；构建必须带 `--base=/strike-protocol/`。
   - 43MB 资源（模型/贴图/音效）走 GitHub raw 分发，手机首次加载约 1 分钟，PWA precache 176 项后离线可玩（>4MB 单文件不入 precache）。
   - 改仓库可见性/Pages 配置需 GitHub API：`/root/.netrc` 内有 github.com 凭证（token 不得展示），`curl -H "Authorization: Bearer $TOKEN"` 调用；Pages 建站点用 `{"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}`。
+
+### [工程进度: FLAGSHIP 批次 A 施工断点（2026-10-01 收尾）]
+- Date: 2026-10-01
+- Context: 用户放行批次 A 后施工中途按用户要求收尾提交，剩余三步待续
+- Category: 工作流与协作
+- Instructions:
+  - 权威总纲 = `.monkeycode/docs/FLAGSHIP.md`（CS2 完美复刻矩阵 17 域 + 批次 A-J；完成记录表在文末第 5 章）。
+  - 批次 A 已完成：武器库 42 项全量表（CS2 wiki 数值+team 阵营字段+全枪 spray pattern）、护甲 CS 模型（final=d×pen、甲损=final×0.5、腿免甲、甲尽回升）、hitbox 腹 1.25/腿 0.75/臂 1、移速表驱动、zeus 近战。测试基线 184→189。
+  - 批次 A 剩余：A-4 投掷槽 4→5 格 + decoy 假枪声骗 bot 听觉 + incendiary 接 grenade 系统（GrenadeKind 在 state.ts）；A-5 穿墙材质补 concrete/metal（CONFIG.wallbang.materials）；A-6 买菜单扩 40 项+阵营过滤+新剪影、bot 买枪池、scoreboard 武器图标映射。
+  - 踩坑：player_adversarial 两用例对移速时序敏感——runMatch 已加 {chase} 参数隔离（下包用默认策略、交火用 chase:true）；stepToward 无碰撞位移会穿墙坠图致死。

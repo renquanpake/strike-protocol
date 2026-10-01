@@ -66,9 +66,9 @@ describe('combat e2e', () => {
     p.input = { ...emptyInput(), fireQueued: true }
     state.tick = 0
     fireWeapon(state, p, prepped, events)
-    // 眼高 64 → 命中 200u 处靶子的头部（y 58..72）；G-19 爆头 28×2.5=70（CS 数值），100 血剩 30
-    expect(t.health).toBeCloseTo(30, 1)
-    expect(t.alive).toBe(true)
+    // 眼高 64 → 命中 200u 处靶子的头部（y 58..72）；G-19 爆头 30×4=120（CS2 全枪 4x）→ 100 血靶一枪毙
+    expect(t.health).toBeLessThanOrEqual(0)
+    expect(t.alive).toBe(false)
     expect(t.hitFlashTick).toBe(0)
   })
 

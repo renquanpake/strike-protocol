@@ -180,4 +180,10 @@ v1 征程全部并入本矩阵：P0 手感→1.1/1.4/1.6；P1 视觉→1.11；P2
 
 | 批次 | 完成 commit | 日期 | 备注 |
 | --- | --- | --- | --- |
-| （待用户放行） | — | — | — |
+| A-1 武器库 42 项全量表 | （见 2026-10-01 提交） | 2026-10-01 | CS2 wiki 数值：10 手枪/7 冲锋/7 步枪/4 狙/4 霰/2 机枪/6 投掷+zeus/刀；新增 team 阵营字段；测试基线 184→189 |
+| A-2 护甲 CS 模型 + hitbox 校准 | 同上 | 2026-10-01 | shotDamage：final=d×armorPen、甲损=final×0.5、腿免甲、甲尽回升 d-2×armor；hitboxMultipliers 腹 1.25/腿 0.75/臂 1；zeus 近战接入 |
+| A-3 移速表驱动 | 同上 | 2026-10-01 | moveSpeedScale 实数（AWP 0.80/步枪 0.86-0.90/SMG 0.96/LMG 0.78），movement.ts 已消费 |
+| A-4 投掷槽 5 格 + decoy/incendiary | 未完成 | — | 投掷物槽仍 4 格；decoy 假枪声（bot 听觉联动）未实现；incendiary 已入表未接 grenade 系统 |
+| A-5 穿墙材质表补全 | 未完成 | — | 现有 wood 0.9/sandbag 0.7/sand 0.85；缺 concrete/metal 对标 |
+| A-6 买菜单/bot 装备全量接入 | 未完成 | — | buymenu 仍 12 项（需 40 项+阵营过滤+新剪影）；bot 买枪池未扩；scoreboard 武器图标映射未补 |
+| 批次 A 遗留说明 | — | — | 对抗测试两用例分策略参数（chase 开关）隔离时序敏感；deaths 于 stepToward 穿墙坠图可复现 |

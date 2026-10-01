@@ -125,13 +125,13 @@ export const CONFIG = {
     { reactionMs: [180, 260], sigmaMul: 0.48, tauMul: 0.6, viewRange: 620, strafePeriod: 22, hear: true, lkpSec: 5, cover: true, anchor: true, burst: true, headBias: 0.55, radioHear: true },
     { reactionMs: [140, 220], sigmaMul: 0.38, tauMul: 0.5, viewRange: 680, strafePeriod: 20, hear: true, lkpSec: 6, cover: true, anchor: true, burst: true, headBias: 0.6, radioHear: true },
   ] as const,
-  /** 部位倍率（CS：腹 0.85、四肢 0.5；头部为逐枪 headMul，见 weapons.ts） */
+  /** 部位倍率（CS2 hitgroup：头 4（逐枪 headMul 可覆盖）/ 胸 1 / 腹 1.25 / 臂 1 / 腿 0.75；腿免甲见 weapon.shotDamage） */
   hitboxMultipliers: {
     head: 4,
     chest: 1,
-    stomach: 0.85,
-    arms: 0.5,
-    legs: 0.5,
+    stomach: 1.25,
+    arms: 1,
+    legs: 0.75,
   } as Record<'head' | 'chest' | 'stomach' | 'arms' | 'legs', number>,
 
   // 地图

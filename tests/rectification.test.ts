@@ -114,9 +114,9 @@ describe('G1 穿墙（wallbang）', () => {
     p.input = { ...emptyInput(), fireQueued: true }
     fireWeapon(state, p, dblPrepped, new EventBus())
     const awpScale = CONFIG.wallbang.materials.wood ** CONFIG.wallbang.maxLayers
-    expect(state.targets[0].health).toBeCloseTo(100 - 50 * awpScale, 1)
+    expect(state.targets[0].health).toBeCloseTo(100 - WEAPONS.awp.damage * awpScale, 1)
 
-    // 手枪（glock wallPenetration 0.25 < 0.9 → 仅 1 层）：双层木板挡住目标
+    // 手枪（glock wallPenetration 0.2 < 0.9 → 仅 1 层）：双层木板挡住目标
     state.targets[0].health = 100
     state.targets[0].alive = true
     p.weapons.primary = newWeaponInstance('glock')
@@ -249,10 +249,10 @@ describe('G3 受击减速（tagging）', () => {
     const { victim, tick } = hitChest('usp')
     expect(victim.health).toBeLessThan(100)
     expect(victim.tagFromTick).toBe(tick)
-    // usp 25 伤、无甲：时长 400+200*0.5=500ms=32 tick，强度 min(0.5, 25*0.01)=0.25
-    const expMs = CONFIG.tagging.minMs + (CONFIG.tagging.maxMs - CONFIG.tagging.minMs) * Math.min(1, 25 / 50)
+    // usp 35 伤、无甲：时长 400+200*0.7=540ms=35 tick，强度 min(0.5, 35*0.01)=0.35
+    const expMs = CONFIG.tagging.minMs + (CONFIG.tagging.maxMs - CONFIG.tagging.minMs) * Math.min(1, WEAPONS.usp.damage / 50)
     expect(victim.tagUntilTick - tick).toBe(Math.max(1, Math.round((expMs / 1000) * CONFIG.tickRate)))
-    expect(victim.tagStrength).toBeCloseTo(Math.min(CONFIG.tagging.maxStrength, 25 * CONFIG.tagging.strengthPerDmg), 5)
+    expect(victim.tagStrength).toBeCloseTo(Math.min(CONFIG.tagging.maxStrength, WEAPONS.usp.damage * CONFIG.tagging.strengthPerDmg), 5)
   })
 
   it('护甲降低 tag 时长与降幅', () => {
@@ -260,9 +260,9 @@ describe('G3 受击减速（tagging）', () => {
       const r = hitChest('usp')
       return { state: r.state, victim: r.victim }
     })()
-    // 无甲：dmg=25 → 时长 400+200*0.5=500ms=32 tick
+    // 无甲：dmg=35 → 时长 400+200*0.7=540ms=35 tick
     const noArmorTicks = victim.tagUntilTick - victim.tagFromTick
-    expect(noArmorTicks).toBe(32)
+    expect(noArmorTicks).toBe(35)
     // 带甲再打一发：最终伤害 = 25*0.5 = 12.5
     victim.health = 100
     victim.armor = 100
@@ -272,7 +272,7 @@ describe('G3 受击减速（tagging）', () => {
     state.tick = 200
     p.input = { ...emptyInput(), fireQueued: true }
     fireWeapon(state, p, clearPrepped, new EventBus())
-    const finalDmg = 25 * 0.5
+    const finalDmg = WEAPONS.usp.damage * WEAPONS.usp.armorPenetration
     const armoredTicks = victim.tagUntilTick - victim.tagFromTick
     const expMs =
       (CONFIG.tagging.minMs +

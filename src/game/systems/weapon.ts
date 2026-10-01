@@ -33,11 +33,11 @@ function msToTicks(ms: number): number {
   return Math.round((ms / 1000) * CONFIG.tickRate)
 }
 
-/** 单发伤害结算（纯函数）：
- * 部位倍率（头部取逐枪 headMul，默认 4；腹 0.85 / 四肢 0.5，见 CONFIG）× 距离衰减 × 护甲。
- * 护甲模型（对标 CS）：甲池 0-100 点；非头部命中吸收 50%（受甲池约束）；
- * 头部命中仅当戴盔时吸收 50%（头盔不消耗甲池，但受甲池余量约束）。
- * 返回最终伤害与本次甲池损耗。 */
+/** 单发伤害结算（纯函数，CS 护甲模型）：
+ * 部位倍率：头部取逐枪 headMul（默认 4）；胸 1 / 腹 1.25 / 臂 1 / 腿 0.75（CONFIG，CS2 hitgroup）。
+ * 距离衰减：falloffStart→falloffEnd 线性衰减至 rangeModifier。
+ * 护甲（CS 模型）：有甲部位最终伤害 = 原伤 × armorPenetration，甲损耗 = 最终伤 × 0.5；
+ * 腿部免甲（CS：腿不吃护甲减免）；头部仅戴盔时受甲减免。 */
 export function shotDamage(
   def: WeaponDef,
   part: HitboxPart,
@@ -56,10 +56,18 @@ export function shotDamage(
     d *= Math.max(def.rangeModifier, factor)
   }
   let armorLost = 0
-  const armored = part !== 'head' ? armor > 0 : helmet && armor > 0
+  const armored = part === 'legs' ? false : part === 'head' ? helmet && armor > 0 : armor > 0
   if (armored) {
-    armorLost = Math.min(d * 0.5, armor)
-    d -= armorLost
+    const final = d * def.armorPenetration
+    const loss = final * 0.5
+    if (loss <= armor) {
+      armorLost = loss
+      d = final
+    } else {
+      // CS 源码行为：甲池不足时伤害回升（flNew = flDamage - armorValue / armorBonus）
+      armorLost = armor
+      d = d - armor * 2
+    }
   }
   return { damage: d, armorLost }
 }
@@ -168,8 +176,12 @@ export function fireWeapon(
     z: p.position.z,
   }
 
-  // 近战
-  if (def.category === 'knife') {
+  // 近战（knife / zeus：zeus 走近战分支且消耗弹药）
+  if (def.category === 'knife' || def.category === 'gear') {
+    if (def.category === 'gear') {
+      if (w.ammoMag <= 0) return
+      w.ammoMag -= 1
+    }
     meleeStrike(state, p, def, eye, events)
     w.nextFireTick = state.tick + msToTicks(def.fireRateMs)
     events.emit({ type: 'shot', shooterId: p.id, weaponId: def.id })

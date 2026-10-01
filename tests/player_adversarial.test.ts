@@ -80,7 +80,8 @@ export interface RunResult {
   score: [number, number]
 }
 
-export function runMatch(seed: number, ticks: number): RunResult {
+export function runMatch(seed: number, ticks: number, opts: { chase?: boolean } = {}): RunResult {
+  const chase = opts.chase ?? false
   const { state, prepped, nav, ctx, events, level } = makeWorld(seed)
   state.round.phase = 'live'
   state.round.phaseEndTick = state.tick + Math.round(120 * CONFIG.tickRate)
@@ -114,8 +115,12 @@ export function runMatch(seed: number, ticks: number): RunResult {
         const c4 = state.round.c4
         const enemy = nearestEnemy(state, p)
         const dEnemy = enemy ? Math.hypot(enemy.position.x - p.position.x, enemy.position.z - p.position.z) : Infinity
-        // 近敌（500u）→ 交战优先（停步架枪）；无近敌 → 推进 A 点下包
-        if (enemy && dEnemy < 500) {
+        // 近敌（650u）→ 交战优先（停步架枪）；chase 时中距敌逼近接敌；无近敌 → 推进 A 点下包
+        if (enemy && dEnemy < 650) {
+          aimAt(p, enemy)
+          inp.fireHeld = true
+        } else if (chase && enemy && dEnemy < 800) {
+          stepToward(p, enemy.position, 500, DT)
           aimAt(p, enemy)
           inp.fireHeld = true
         } else if (state.round.phase === 'live' && c4.state === 'carried' && c4.carrierId === p.id) {
@@ -163,7 +168,7 @@ describe('玩家视角对抗（脚本化本地玩家：T 下包 vs CT 抢拆）'
   })
 
   it('对抗性：玩家与 bot 双向交火（玩家有击杀或承伤）', () => {
-    const r = runMatch(0xabc, 14000)
+    const r = runMatch(0xabc, 14000, { chase: true })
     expect(r.myKills + (r.damageTaken > 0 ? 1 : 0)).toBeGreaterThan(0)
   })
 

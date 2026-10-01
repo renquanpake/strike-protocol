@@ -91,7 +91,8 @@ describe('movement (M0 baseline)', () => {
     runTicks(ctx, 64, { forward: 1 })
     const speed = Math.hypot(ctx.p.velocity.x, ctx.p.velocity.z)
     expect(ctx.p.position.z).toBeLessThan(-100)
-    expect(speed).toBeGreaterThan(CONFIG.moveMaxSpeed - 10)
+    // 极速 = moveMaxSpeed × 持枪移速比（默认手枪 0.96 → 240）
+    expect(speed).toBeGreaterThan(CONFIG.moveMaxSpeed - 20)
     expect(speed).toBeLessThanOrEqual(CONFIG.moveMaxSpeed + 1)
   })
 
